@@ -278,6 +278,14 @@ function Utility.FromHex(text)
 	)
 end
 
+-- RichText needs & < > escaped (user text must never be interpreted as markup)
+function Utility.EscapeRich(text)
+	text = string.gsub(tostring(text or ""), "&", "&amp;")
+	text = string.gsub(text, "<", "&lt;")
+	text = string.gsub(text, ">", "&gt;")
+	return text
+end
+
 --// Callbacks
 function Utility.SafeCall(fn, ...)
 	if typeof(fn) ~= "function" then

@@ -258,6 +258,19 @@ function Compat.HttpGet(url)
 	return nil
 end
 
+-- Full request (method, headers, body). Returns the response table, or nil plus a reason.
+function Compat.HttpRequest(options)
+	local requester = request or http_request or (syn and syn.request)
+	if not requester then
+		return nil, "This executor has no request function"
+	end
+	local ok, response = pcall(requester, options)
+	if not ok then
+		return nil, tostring(response)
+	end
+	return response
+end
+
 --// Clipboard -----------------------------------------------------------------
 -- Reading the clipboard is only offered by some executors; nil when unavailable.
 Compat.GetClipboard = (getclipboard or readclipboard) and function()

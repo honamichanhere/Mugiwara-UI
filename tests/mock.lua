@@ -242,6 +242,9 @@ local DEFAULTS = {
 	AbsoluteContentSize = function() return Vector2.new(100, 100) end,
 	Size = function() return UDim2.new(0, 0, 0, 0) end,
 	Position = function() return UDim2.new(0, 0, 0, 0) end,
+	AbsoluteCanvasSize = function() return Vector2.new(0, 100) end,
+	AbsoluteWindowSize = function() return Vector2.new(100, 100) end,
+	CanvasPosition = function() return Vector2.new(0, 0) end,
 	Visible = true,
 	Text = "",
 	Rotation = 0,
@@ -287,6 +290,17 @@ function Methods.GetChildren(self)
 	end
 	return copy
 end
+function Methods.GetDescendants(self)
+	local out = {}
+	local function walk(node)
+		for _, child in ipairs(rawget(node, "_children")) do
+			table.insert(out, child)
+			walk(child)
+		end
+	end
+	walk(self)
+	return out
+end
 function Methods.FindFirstChild(self, name)
 	for _, child in ipairs(rawget(self, "_children")) do
 		if child.Name == name then
@@ -312,6 +326,9 @@ function Methods.GetPropertyChangedSignal(self, name)
 	return signals[name]
 end
 function Methods.CaptureFocus() end
+function Methods.IsDescendantOf(self)
+	return not rawget(self, "_destroyed")
+end
 function Methods.Destroy(self)
 	if rawget(self, "_destroyed") then
 		return

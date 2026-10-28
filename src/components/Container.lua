@@ -15,6 +15,7 @@ local Text = Import("components/elements/Text")
 local ProgressBar = Import("components/elements/ProgressBar")
 local Code = Import("components/elements/Code")
 local ImageElement = Import("components/elements/Image")
+local Chat = Import("components/elements/Chat")
 
 local Create, Tween = Utility.Create, Utility.Tween
 
@@ -91,6 +92,11 @@ end
 
 function Container:Image(opts)
 	return ImageElement(self, opts)
+end
+
+-- Live chat between everyone running the hub. Needs a Transport (MugiwaraUI.ChatTransports).
+function Container:Chat(opts)
+	return Chat(self, opts)
 end
 
 -- Blank vertical gap: tab:Space() or tab:Space(24)

@@ -3,3 +3,6 @@ node_modules/
 .DS_Store
 Thumbs.db
 .claude/
+.wrangler/
+server/worker/node_modules/
+.dev.vars

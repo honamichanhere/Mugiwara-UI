@@ -6,6 +6,7 @@ local IconSets = Import("core/IconSets")
 local Theme = Import("core/Theme")
 local Window = Import("components/Window")
 local Notification = Import("components/Notification")
+local ChatTransports = Import("components/ChatTransports")
 local KeySystem = Import("components/KeySystem")
 local Loading = Import("components/Loading")
 
@@ -23,6 +24,7 @@ local Library = {
 	Theme = Theme.new("Gear 5"),
 	Icons = Icons,
 	IconSets = IconSets,
+	ChatTransports = ChatTransports, -- Http (Cloudflare Worker backend) and Memory (offline demo)
 	Compat = Compat,
 }
 

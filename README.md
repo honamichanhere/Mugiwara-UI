@@ -79,7 +79,7 @@ Methods: `SetStatus(text)`, `SetProgress(target, cap)`, `Log(text, "info"|"ok"|"
 - Top bar with a **theme menu** and a **version badge**
 - Optional **wallpaper** for the whole window and **image cards** for single elements
 - Mobile friendly: scales down to fit small screens, touch dragging, no hover-only interactions
-- Tabs, **tab sections** (collapsible sidebar groups), collapsible sections nestable up to **2 levels**, 15 element types, row layout, notifications, dialogs
+- Tabs, **tab sections** (collapsible sidebar groups), collapsible sections nestable up to **2 levels**, 16 element types (including live chat), row layout, notifications, dialogs
 - Color picker popup: color square, hue slider, opacity slider (0-100), HEX / RGB / HSV / HSL fields
 - 4 built-in themes with live switching, plus custom themes
 - Config saving (JSON) with flags, auto-load, and a ready-made config manager section
@@ -165,6 +165,7 @@ tab:ProgressBar({ Title, Value, Min, Max, Suffix })   -- el:Set(value) animates;
 tab:Code({ Title, Code, Language = "lua", Copy = true, Height = 220 })  -- Lua highlighted, copy button, scrolls sideways
 tab:Image({ Image, Height = 150, Scale = "Crop" | "Fit" | "Stretch", Title })  -- asset id / URL; el:SetImage(...)
 tab:Space(16)                              -- blank gap
+tab:Chat({ Transport = ..., Height = 340 })   -- live chat, see "Live chat" below
 local row = tab:Group({ Gap = 8 })         -- children share the width side by side
 row:Button({ Title = "A" }); row:Button({ Title = "B" })
 tab:Section({ Title, Opened })             -- returns a container; section:SetOpen(bool)
@@ -189,6 +190,52 @@ el:SetIcon("geist:bell")                                            -- returns f
 - The download is **pinned to a single commit**, so a later push to that repository cannot change what runs on your users' machines. Bump `COMMIT` in [`src/core/IconSets.lua`](src/core/IconSets.lua) to update.
 - If a set cannot be downloaded, tabs fall back to a letter badge and elements simply show no icon.
 - `sfsymbols` exists upstream but is intentionally disabled: Apple's license only allows SF Symbols in apps for Apple platforms.
+
+### Live chat
+
+`tab:Chat` is a chat room for everyone running your hub: Roblox names and avatars, history, replies, deleting your own
+messages, muting people, a "new messages" pill when you are reading older ones. The element only draws the chat; a
+**transport** moves the messages:
+
+```lua
+-- real chat: deploy the Cloudflare Worker from server/worker (free, ~5 minutes, see server/worker/README.md)
+local transport = MugiwaraUI.ChatTransports.Http({
+    Url = "https://mugiwara-chat.<you>.workers.dev",
+    Channel = "global",     -- other names are separate rooms
+    Folder = "MugiwaraHub", -- the device token is stored here
+})
+
+-- no backend yet: fake players chat with you (for trying the UI)
+-- local transport = MugiwaraUI.ChatTransports.Memory()
+
+local chat = tab:Chat({
+    Title = "Live Chat",
+    Transport = transport,
+    Height = 340,
+    MaxLength = 200,
+    BackgroundPoll = 20, -- optional: keep listening while hidden so OnMessage can notify
+    OnMessage = function(message) print(message.DisplayName, message.Text) end,
+})
+```
+
+Click a message to Reply / Copy / Delete (your own) / Mute (someone else's). Options: `Height`, `MaxLength` (200),
+`Cooldown` (1.5 s between sends), `History` (messages per page, 50), `PollInterval` (3 s while people talk),
+`IdlePollInterval` (8 s), `BackgroundPoll`, `Placeholder`, `OnMessage(message)`.
+Methods: `Send(text)`, `Refresh()`, `Clear()`, `Mute(userId)`, `Unmute(userId)`, `GetMuted()`, `GetMessages()`.
+
+Things to know:
+
+- **Names come from `LocalPlayer`** (DisplayName, @username, headshot). They cannot be proven from an executor. The
+  Worker binds each Roblox user id to a per-device secret token the first time it sends, so nobody can post as an
+  account that already chatted or delete its messages.
+- **No moderation** (no filter, bans or reports). The only limits protect the free tier: length cap, per-user
+  cooldown, pruning. Roblox does not filter this chat; the backend stores ids, names and messages.
+- Polling only runs while the chat is on screen (3 s while people talk, 8 s otherwise, backing off when offline).
+- Message text is never parsed as RichText, and names are escaped.
+- Writing your own backend: a transport is a table with `User`, `History`, `Poll`, `Send`, `Delete` (see
+  [`ChatTransports.lua`](src/components/ChatTransports.lua) for the exact contract).
+
+Demo: [`examples/dummy-chat.lua`](examples/dummy-chat.lua).
 
 ### Background images
 
@@ -238,6 +285,7 @@ Elements in WindUI's source tree and where they stand here:
 | Button, Toggle, Slider, Dropdown, Input, Keybind, Colorpicker, Paragraph, Divider, Section | available |
 | Key system | available as a separate Key UI (not a `CreateWindow` option) |
 | Code, ProgressBar, Image, Space | available |
+| (not in WindUI) Chat | `tab:Chat`, needs the Cloudflare Worker in `server/worker` |
 | Group / HStack | `tab:Group()` (a row; equal widths). VStack is simply the default (elements stack vertically) |
 | Video, Viewport | **missing** |
 
@@ -257,7 +305,8 @@ npm run build   # bundle src/ into dist/main.lua
 
 - `src/` — modules, loaded with `Import("path")`; the build bundles them into one file
 - `build/check.mjs` — syntax and undefined-global check
-- `tests/` — Roblox API mock + smoke test (runs on Lua 5.3 via fengari; checks logic, not rendering)
+- `tests/` — Roblox API mock + smoke / flow / chat tests (Lua 5.3 via fengari; checks logic, not rendering)
+- `server/worker/` — the chat backend (Cloudflare Worker + D1) and its tests
 
 Commit `dist/main.lua` after building: that file is what `loadstring` fetches.
 

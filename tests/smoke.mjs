@@ -34,6 +34,7 @@ lua.lua_setglobal(L, to_luastring("DIST_SOURCE"));
 run("mock", readFileSync(join(root, "tests", "mock.lua"), "utf8"));
 run("smoke", readFileSync(join(root, "tests", "smoke.lua"), "utf8"));
 run("flow", readFileSync(join(root, "tests", "flow.lua"), "utf8"));
+run("chat", readFileSync(join(root, "tests", "chat.lua"), "utf8"));
 
 // The Key > Loading > Main demo has to be driven (it waits on the UI), so it has its own harness.
 lua.lua_pushstring(L, to_luastring(readFileSync(join(root, "examples", "dummy-flow.lua"), "utf8")));
@@ -41,7 +42,7 @@ lua.lua_setglobal(L, to_luastring("FLOW_SOURCE"));
 run("dummy-flow", readFileSync(join(root, "tests", "dummy-flow.lua"), "utf8"));
 
 // The shipped examples must run cleanly too (they load the bundle through the mocked HttpGet).
-for (const example of ["showcase", "dummy"]) {
+for (const example of ["showcase", "dummy", "dummy-chat"]) {
 	run(`example:${example}`, readFileSync(join(root, "examples", `${example}.lua`), "utf8"));
 	run(
 		`example:${example}:after`,
