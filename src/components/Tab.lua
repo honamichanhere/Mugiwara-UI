@@ -8,7 +8,8 @@ local Container = Import("components/Container")
 
 local Create, Tween = Utility.Create, Utility.Tween
 
-return function(window, opts)
+-- `parent` is the sidebar list the button goes into (a TabSection body); defaults to the main list.
+return function(window, opts, parent)
 	opts = opts or {}
 	local theme = window.Theme
 	local name = opts.Title or "Tab"
@@ -36,7 +37,7 @@ return function(window, opts)
 		Name = name,
 		Size = UDim2.new(1, 0, 0, 40),
 		LayoutOrder = window:NextTabOrder(),
-		Parent = window.TabList,
+		Parent = parent or window.TabList,
 	})
 
 	local background = Create("Frame", {
@@ -117,8 +118,10 @@ return function(window, opts)
 		end
 
 		if state then
+			-- slide up + fade in
+			page.Position = UDim2.fromOffset(0, 14)
 			page.Visible = true
-			Tween(page, { GroupTransparency = 0 }, 0.28)
+			Tween(page, { GroupTransparency = 0, Position = UDim2.new() }, 0.4)
 		else
 			Tween(page, { GroupTransparency = 1 }, 0.14)
 			task.delay(0.16, function()

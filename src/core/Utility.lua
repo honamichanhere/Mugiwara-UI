@@ -249,13 +249,16 @@ function Utility.DragInput(object, maid, onBegin, onUpdate, onEnd)
 end
 
 -- Moves `target` when `handle` is dragged. Fires onClick when released without moving.
-function Utility.Draggable(handle, target, maid, getScale, onClick)
+function Utility.Draggable(handle, target, maid, getScale, onClick, enabled)
 	local dragging = false
 	local moved = false
 	local startPointer, startPosition
 
 	maid:Give(handle.InputBegan:Connect(function(input)
 		if not Utility.IsPress(input) then
+			return
+		end
+		if enabled and not enabled() then
 			return
 		end
 		dragging = true

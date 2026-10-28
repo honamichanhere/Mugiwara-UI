@@ -36,9 +36,12 @@ To test local changes without pushing: run `npm run build`, copy `dist/main.lua`
 
 ## Features
 
-- Glass window with animated neon border, drag, resize, minimize to a floating button, `RightShift` toggle
+- Glass window with animated neon border: drag, resize, **maximize**, minimize to a floating button, `RightShift` toggle
+- Top bar with a **theme menu** and a **version badge**
+- Optional **wallpaper** for the whole window and **image cards** for single elements
 - Mobile friendly: scales down to fit small screens, touch dragging, no hover-only interactions
-- Tabs, collapsible sections, 10 element types, notifications, dialogs
+- Tabs, **tab sections** (collapsible sidebar groups), collapsible sections nestable up to **2 levels**, 10 element types, notifications, dialogs
+- Color picker popup: color square, hue slider, opacity slider (0-100), HEX / RGB / HSV / HSL fields
 - 4 built-in themes with live switching, plus custom themes
 - Config saving (JSON) with flags, auto-load, and a ready-made config manager section
 - Executor-safe: every executor API is optional and wrapped (`gethui`, `cloneref`, file functions, ...)
@@ -62,6 +65,9 @@ To test local changes without pushing: run `npm run build`, copy `dist/main.lua`
 | Option | Default | Notes |
 | --- | --- | --- |
 | `Title`, `Subtitle` | `"Mugiwara UI"` | Topbar text |
+| `Version` | none | Badge next to the title, e.g. `"v1.2.0"` |
+| `ThemeSwitcher` | `true` | Theme menu button in the top bar |
+| `Background` | none | Wallpaper: `"rbxassetid://..."` or `{ Image, Transparency, Dim }` |
 | `Icon` | letter badge | Asset id / registered icon |
 | `Size` | `640x430` | `UDim2.fromOffset(w, h)` |
 | `MinSize`, `MaxSize` | `470x320`, `1000x760` | Resize limits |
@@ -75,11 +81,35 @@ To test local changes without pushing: run `npm run build`, copy `dist/main.lua`
 | `ShowUser` | `true` | Avatar chip in the sidebar |
 | `SideBarWidth` | `176` (`150` on mobile) | |
 
-Window methods: `Tab`, `SelectTab`, `SidebarLabel`, `SidebarDivider`, `Dialog`, `Notify`, `SetTitle`, `SetTheme`, `SetBlur`, `SetScale`, `SetToggleKey`, `Open`, `Close`, `Toggle`, `Destroy`, `SaveConfig`, `LoadConfig`, `DeleteConfig`, `GetConfigs`, `LoadAutoConfig`, `ConfigSection`.
+Window methods: `Tab`, `TabSection`, `SelectTab`, `SidebarLabel`, `SidebarDivider`, `Dialog`, `Notify`, `SetTitle`, `SetVersion`, `SetTheme`, `OpenThemeMenu`, `SetBackground`, `SetBlur`, `SetScale`, `SetToggleKey`, `SetMaximized`, `ToggleMaximized`, `Open`, `Close`, `Toggle`, `Destroy`, `SaveConfig`, `LoadConfig`, `DeleteConfig`, `GetConfigs`, `LoadAutoConfig`, `ConfigSection`.
+
+### Layout: tabs and sections
+
+```
+Window
+ ├─ Tab                          flat tab in the sidebar
+ ├─ TabSection (collapsible)     titled group of tabs; one level only
+ │    └─ Tab
+ │         ├─ elements
+ │         └─ Section (level 1)  collapsible group
+ │              ├─ elements
+ │              └─ Section (level 2)   the deepest allowed ("double section")
+ │                   └─ elements        a 3rd level raises an error
+```
+
+```lua
+local Combat = Window:TabSection({ Title = "Combat", Opened = true })
+local Aim = Combat:Tab({ Title = "Aim" })          -- tabs inside a tab section
+local Misc = Window:Tab({ Title = "Misc" })        -- or a plain tab
+
+local Outer = Aim:Section({ Title = "Targeting" })
+local Inner = Outer:Section({ Title = "Filters" }) -- double section
+Inner:Toggle({ Title = "Ignore friends" })
+```
 
 ### Elements
 
-Tabs and sections share the same element methods. All elements accept `Title`, `Desc`, `Flag` (enables config saving), `Locked`, and return an object with `Set`, `Get`, `SetTitle`, `SetDesc`, `SetVisible`, `Lock`, `Unlock`, `Destroy`.
+Tabs and sections share the same element methods. All elements accept `Title`, `Desc`, `Flag` (enables config saving), `Locked`, `Image` (card background, asset id or URL) and `ImageTransparency`, and return an object with `Set`, `Get`, `SetTitle`, `SetDesc`, `SetVisible`, `Lock`, `Unlock`, `Destroy`.
 
 ```lua
 tab:Button({ Title, Desc, Callback })
@@ -88,16 +118,25 @@ tab:Slider({ Title, Value = { Min, Max, Default }, Step, Suffix, Callback(value)
 tab:Dropdown({ Title, Values, Value, Multi, AllowNone, Searchable, Callback(value) })  -- el:Refresh(values, keepSelection)
 tab:Input({ Title, Value, Placeholder, Numeric, Type = "Input" | "Textarea", Callback(text) })
 tab:Keybind({ Title, Value = "K", Callback(), OnChange(key) })
-tab:Colorpicker({ Title, Default, Transparency, Callback(color, transparency) })
+tab:Colorpicker({ Title, Default, Transparency, Callback(color, transparency) })  -- opens a popup
 tab:Label({ Title })
 tab:Paragraph({ Title, Desc })
 tab:Divider({ Title })                     -- Title optional
 tab:Section({ Title, Opened })             -- returns a container; section:SetOpen(bool)
 ```
 
+### Background images
+
+Two options, both optional:
+
+- **Wallpaper** (recommended): one image behind the whole window. The glass cards let it show through, so it reads as a single picture instead of cropped pieces. `Window:SetBackground("rbxassetid://...", 0.55, 0.45)` (image, transparency, dark scrim) or the `Background` window option.
+- **Image card**: `Image = "..."` on any element puts a picture inside that one card. It fades in from the right so the title stays readable.
+
+Images can be an asset id, `rbxassetid://...`, or an http(s) URL. URLs are downloaded once into `<Folder>/cache` and need `request`, `writefile` and `getcustomasset` on the executor; otherwise they are skipped silently.
+
 ### Themes
 
-Built in: `Gear5` (default), `Sunrise`, `Joyboy`, `Gomu`.
+Built in: `Gear5` (default), `Sunrise`, `Joyboy`, `Gomu`. Switch from the dot in the top bar or with `MugiwaraUI:SetTheme(name)`; gradients cross-fade.
 
 ```lua
 MugiwaraUI:AddTheme("Mine", {

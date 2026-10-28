@@ -85,6 +85,9 @@ UDim2 = {
 local color3MT = {
 	__typeof = "Color3",
 	__index = {
+		Lerp = function(a, b, t)
+			return Color3.new(a.R + (b.R - a.R) * t, a.G + (b.G - a.G) * t, a.B + (b.B - a.B) * t)
+		end,
 		ToHSV = function(c)
 			local r, g, b = c.R, c.G, c.B
 			local max, min = math.max(r, g, b), math.min(r, g, b)
@@ -119,7 +122,15 @@ Color3 = {
 }
 
 ColorSequenceKeypoint = { new = function(time, value) return { Time = time, Value = value } end }
-ColorSequence = { new = function(a, b) return typed("ColorSequence", { keypoints = a, b = b }) end }
+ColorSequence = {
+	new = function(a, b)
+		local points = a
+		if type(a) ~= "table" or getmetatable(a) then
+			points = { ColorSequenceKeypoint.new(0, a), ColorSequenceKeypoint.new(1, b) }
+		end
+		return typed("ColorSequence", { Keypoints = points })
+	end,
+}
 NumberSequenceKeypoint = { new = function(time, value) return { Time = time, Value = value } end }
 NumberSequence = { new = function(a, b) return typed("NumberSequence", { a = a, b = b }) end }
 TweenInfo = { new = function(...) return { ... } end }
@@ -363,6 +374,7 @@ local services = {
 	TextService = {
 		GetTextSize = function(_, text) return Vector2.new(#text * 6, 14) end,
 	},
+	RunService = { Heartbeat = newSignal() },
 	Lighting = Instance.new("Folder"),
 	CoreGui = Instance.new("Folder"),
 }

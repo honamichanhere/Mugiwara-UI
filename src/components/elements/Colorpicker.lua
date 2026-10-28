@@ -1,7 +1,9 @@
 local Utility = Import("core/Utility")
+local Icons = Import("core/Icons")
 local Base = Import("components/Base")
+local Popup = Import("components/Popup")
 
-local Create = Utility.Create
+local Create, Tween = Utility.Create, Utility.Tween
 local WHITE = Color3.new(1, 1, 1)
 
 local RAINBOW = ColorSequence.new({
@@ -13,6 +15,59 @@ local RAINBOW = ColorSequence.new({
 	ColorSequenceKeypoint.new(5 / 6, Color3.fromRGB(255, 0, 255)),
 	ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 0, 0)),
 })
+
+local MODES = { "HEX", "RGB", "HSV", "HSL" }
+local SQUARE = 176 -- saturation / value square
+local BAR = 18
+
+--// HSL helpers (HSV comes from Color3) ----------------------------------------
+local function toHSL(color)
+	local r, g, b = color.R, color.G, color.B
+	local max, min = math.max(r, g, b), math.min(r, g, b)
+	local l = (max + min) / 2
+	local h, s = 0, 0
+	if max ~= min then
+		local d = max - min
+		s = l > 0.5 and d / (2 - max - min) or d / (max + min)
+		if max == r then
+			h = (g - b) / d + (g < b and 6 or 0)
+		elseif max == g then
+			h = (b - r) / d + 2
+		else
+			h = (r - g) / d + 4
+		end
+		h = h / 6
+	end
+	return h, s, l
+end
+
+local function fromHSL(h, s, l)
+	if s == 0 then
+		return Color3.new(l, l, l)
+	end
+	local function channel(p, q, t)
+		if t < 0 then
+			t = t + 1
+		elseif t > 1 then
+			t = t - 1
+		end
+		if t < 1 / 6 then
+			return p + (q - p) * 6 * t
+		elseif t < 1 / 2 then
+			return q
+		elseif t < 2 / 3 then
+			return p + (q - p) * (2 / 3 - t) * 6
+		end
+		return p
+	end
+	local q = l < 0.5 and l * (1 + s) or l + s - l * s
+	local p = 2 * l - q
+	return Color3.new(channel(p, q, h + 1 / 3), channel(p, q, h), channel(p, q, h - 1 / 3))
+end
+
+local function round(value)
+	return math.floor(value + 0.5)
+end
 
 local function marker(parent, size)
 	local dot = Create("Frame", {
@@ -27,18 +82,19 @@ local function marker(parent, size)
 	return dot
 end
 
--- opts: Title, Desc, Default (Color3), Transparency (number, enables the alpha bar), Callback, Flag
--- Callback(color, transparency)
+-- opts: Title, Desc, Default (Color3), Transparency (0 = opaque), Callback(color, transparency), Flag
+-- The picker opens as a popup: color square, hue slider, opacity slider (0-100), HEX / RGB / HSV / HSL fields.
 return function(container, opts)
 	opts = opts or {}
-	local theme = container.Window.Theme
+	local window = container.Window
+	local theme = window.Theme
 	local el = Base.Card(container, opts, 40, 24)
-	local drawer = Base.Expandable(el)
 
-	local useAlpha = opts.Alpha == true or type(opts.Transparency) == "number"
 	local start = opts.Default or opts.Value or Color3.fromRGB(255, 150, 40)
 	local hue, sat, val = start:ToHSV()
-	local alpha = 1 - (opts.Transparency or 0)
+	local alpha = 1 - (opts.Transparency or 0) -- opacity, 1 = fully visible
+	local mode = "HEX"
+	local ui -- widgets of the open popup, nil while closed
 
 	--// swatch (closed state)
 	local swatch = Create("Frame", {
@@ -49,89 +105,54 @@ return function(container, opts)
 	Utility.Corner(swatch, 7)
 	Utility.Stroke(swatch, WHITE, 0.55, 1.5)
 
-	--// saturation / value square
-	local svBox = Create("Frame", {
-		Size = UDim2.new(1, 0, 0, 130),
-		BackgroundColor3 = Color3.fromHSV(hue, 1, 1),
-		LayoutOrder = 1,
-		Parent = drawer.Frame,
-	})
-	Utility.Corner(svBox, 8)
-
-	local whiteLayer = Create("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = WHITE, Parent = svBox })
-	Utility.Corner(whiteLayer, 8)
-	Create("UIGradient", { Transparency = NumberSequence.new(0, 1), Parent = whiteLayer })
-
-	local blackLayer = Create("Frame", {
-		Size = UDim2.fromScale(1, 1),
-		BackgroundColor3 = Color3.new(0, 0, 0),
-		Parent = svBox,
-	})
-	Utility.Corner(blackLayer, 8)
-	Create("UIGradient", { Rotation = 90, Transparency = NumberSequence.new(1, 0), Parent = blackLayer })
-
-	local svMarker = marker(svBox, 14)
-	local svHit = Create("TextButton", { Size = UDim2.fromScale(1, 1), ZIndex = 6, Parent = svBox })
-
-	--// hue bar
-	local hueBar = Create("Frame", {
-		Size = UDim2.new(1, 0, 0, 14),
-		BackgroundColor3 = WHITE,
-		LayoutOrder = 2,
-		Parent = drawer.Frame,
-	})
-	Utility.Corner(hueBar, Utility.Pill)
-	Create("UIGradient", { Color = RAINBOW, Parent = hueBar })
-	local hueMarker = marker(hueBar, 16)
-	hueMarker.Position = UDim2.fromScale(hue, 0.5)
-	local hueHit = Create("TextButton", { Size = UDim2.fromScale(1, 1), ZIndex = 6, Parent = hueBar })
-
-	--// alpha bar (optional)
-	local alphaBar, alphaMarker, alphaHit
-	if useAlpha then
-		alphaBar = Create("Frame", {
-			Size = UDim2.new(1, 0, 0, 14),
-			BackgroundColor3 = start,
-			LayoutOrder = 3,
-			Parent = drawer.Frame,
-		})
-		Utility.Corner(alphaBar, Utility.Pill)
-		Create("UIGradient", { Transparency = NumberSequence.new(0.9, 0), Parent = alphaBar })
-		Utility.Stroke(alphaBar, WHITE, 0.85, 1)
-		alphaMarker = marker(alphaBar, 16)
-		alphaHit = Create("TextButton", { Size = UDim2.fromScale(1, 1), ZIndex = 6, Parent = alphaBar })
-	end
-
-	--// hex input
-	local hexField = Base.Field(theme, drawer.Frame, UDim2.new(1, 0, 0, 28))
-	hexField.LayoutOrder = 4
-	local hexBox = Create("TextBox", {
-		Position = UDim2.fromOffset(10, 0),
-		Size = UDim2.new(1, -20, 1, 0),
-		Font = Enum.Font.GothamBold,
-		TextSize = 12,
-		TextXAlignment = Enum.TextXAlignment.Center,
-		ClearTextOnFocus = false,
-		Parent = hexField,
-	})
-	theme:Bind(hexBox, { TextColor3 = "Text" })
-
-	--// state
 	local function current()
 		return Color3.fromHSV(hue, sat, val)
+	end
+
+	-- keeps the old hue when the new color is gray / black (hue is undefined there)
+	local function setFromColor(color)
+		local h, s, v = color:ToHSV()
+		if s > 0 and v > 0 then
+			hue = h
+		end
+		sat, val = s, v
+	end
+
+	local function renderFields()
+		if not ui then
+			return
+		end
+		local color = current()
+		local values
+		if mode == "HEX" then
+			values = { "#" .. Utility.ToHex(color) }
+		elseif mode == "RGB" then
+			values = { round(color.R * 255), round(color.G * 255), round(color.B * 255) }
+		elseif mode == "HSV" then
+			values = { round(hue * 360), round(sat * 100), round(val * 100) }
+		else
+			local h, s, l = toHSL(color)
+			values = { round((s > 0 and l > 0 and l < 1) and h * 360 or hue * 360), round(s * 100), round(l * 100) }
+		end
+		for index, box in ipairs(ui.Boxes) do
+			box.Text = tostring(values[index])
+		end
+		ui.Alpha.Text = round(alpha * 100) .. "%"
 	end
 
 	local function render()
 		local color = current()
 		swatch.BackgroundColor3 = color
-		swatch.BackgroundTransparency = useAlpha and (1 - alpha) * 0.85 or 0
-		svBox.BackgroundColor3 = Color3.fromHSV(hue, 1, 1)
-		svMarker.Position = UDim2.fromScale(sat, 1 - val)
-		hueMarker.Position = UDim2.fromScale(hue, 0.5)
-		hexBox.Text = "#" .. Utility.ToHex(color)
-		if alphaBar then
-			alphaBar.BackgroundColor3 = color
-			alphaMarker.Position = UDim2.fromScale(alpha, 0.5)
+		swatch.BackgroundTransparency = (1 - alpha) * 0.85
+		if ui then
+			ui.Square.BackgroundColor3 = Color3.fromHSV(hue, 1, 1)
+			ui.SquareMarker.Position = UDim2.fromScale(sat, 1 - val)
+			ui.HueMarker.Position = UDim2.fromScale(0.5, hue)
+			ui.AlphaBar.BackgroundColor3 = color
+			ui.AlphaMarker.Position = UDim2.fromScale(0.5, 1 - alpha)
+			ui.Preview.BackgroundColor3 = color
+			ui.Preview.BackgroundTransparency = 1 - alpha
+			renderFields()
 		end
 	end
 
@@ -140,6 +161,7 @@ return function(container, opts)
 	end
 
 	local function commit()
+		el.Value = current()
 		render()
 		fire()
 	end
@@ -147,6 +169,7 @@ return function(container, opts)
 	el.Value = current()
 	render()
 
+	--// public api
 	function el:Set(value, silent)
 		local color, transparency = value, nil
 		if typeof(value) == "table" then
@@ -158,11 +181,11 @@ return function(container, opts)
 		if typeof(color) ~= "Color3" then
 			return
 		end
-		hue, sat, val = color:ToHSV()
+		setFromColor(color)
 		if transparency then
 			alpha = 1 - transparency
 		end
-		self.Value = color
+		self.Value = current()
 		render()
 		if not silent then
 			fire()
@@ -184,60 +207,287 @@ return function(container, opts)
 		el:Set(value)
 	end
 
-	--// interaction
-	local page = container.Page
-	local function lockScroll()
-		if page then
-			page.ScrollingEnabled = false
-		end
-	end
-	local function unlockScroll()
-		if page then
-			page.ScrollingEnabled = true
-		end
-	end
-
-	local function ratio(frame, position, axis)
-		local origin = axis == "X" and frame.AbsolutePosition.X or frame.AbsolutePosition.Y
-		local length = axis == "X" and frame.AbsoluteSize.X or frame.AbsoluteSize.Y
-		local point = axis == "X" and position.X or position.Y
-		return Utility.Clamp((point - origin) / math.max(length, 1), 0, 1)
-	end
-
-	Utility.DragInput(svHit, el.Maid, lockScroll, function(position)
-		sat = ratio(svBox, position, "X")
-		val = 1 - ratio(svBox, position, "Y")
-		el.Value = current()
-		commit()
-	end, unlockScroll)
-
-	Utility.DragInput(hueHit, el.Maid, lockScroll, function(position)
-		hue = ratio(hueBar, position, "X")
-		el.Value = current()
-		commit()
-	end, unlockScroll)
-
-	if alphaHit then
-		Utility.DragInput(alphaHit, el.Maid, lockScroll, function(position)
-			alpha = ratio(alphaBar, position, "X")
-			commit()
-		end, unlockScroll)
-	end
-
-	el.Maid:Give(hexBox.FocusLost:Connect(function()
-		local color = Utility.FromHex(hexBox.Text)
-		if color then
-			el:Set(color)
+	--// popup ----------------------------------------------------------------------
+	local function applyField(index, text)
+		local number = tonumber(string.match(text, "-?%d+%.?%d*"))
+		if mode == "HEX" then
+			local color = Utility.FromHex(text)
+			if color then
+				setFromColor(color)
+			end
+		elseif not number then
+			return
+		elseif mode == "RGB" then
+			local channels = {
+				round(current().R * 255),
+				round(current().G * 255),
+				round(current().B * 255),
+			}
+			channels[index] = Utility.Clamp(round(number), 0, 255)
+			setFromColor(Color3.fromRGB(channels[1], channels[2], channels[3]))
+		elseif mode == "HSV" then
+			if index == 1 then
+				hue = Utility.Clamp(number, 0, 360) / 360
+			elseif index == 2 then
+				sat = Utility.Clamp(number, 0, 100) / 100
+			else
+				val = Utility.Clamp(number, 0, 100) / 100
+			end
 		else
-			render()
+			local h, s, l = toHSL(current())
+			if index == 1 then
+				h = Utility.Clamp(number, 0, 360) / 360
+			elseif index == 2 then
+				s = Utility.Clamp(number, 0, 100) / 100
+			else
+				l = Utility.Clamp(number, 0, 100) / 100
+			end
+			setFromColor(fromHSL(h, s, l))
+			if s > 0 and l > 0 and l < 1 then
+				hue = h
+			end
 		end
-	end))
+		commit()
+	end
+
+	local function buildFields(row, popMaid)
+		for _, child in ipairs(row:GetChildren()) do
+			if child:IsA("GuiObject") then
+				child:Destroy()
+			end
+		end
+		ui.Boxes = {}
+
+		local count = mode == "HEX" and 1 or 3
+		local alphaWidth = 58
+		local fieldWidth = math.floor((236 - alphaWidth - 6 * count) / count)
+
+		for index = 1, count do
+			local field = Base.Field(theme, row, UDim2.fromOffset(fieldWidth, 28))
+			field.LayoutOrder = index
+			local box = Create("TextBox", {
+				Size = UDim2.fromScale(1, 1),
+				Font = Enum.Font.GothamBold,
+				TextSize = 12,
+				TextXAlignment = Enum.TextXAlignment.Center,
+				ClearTextOnFocus = false,
+				Parent = field,
+			})
+			theme:Bind(box, { TextColor3 = "Text" })
+			popMaid:Give(box.FocusLost:Connect(function()
+				applyField(index, box.Text)
+			end))
+			ui.Boxes[index] = box
+		end
+
+		local alphaField = Base.Field(theme, row, UDim2.fromOffset(alphaWidth, 28))
+		alphaField.LayoutOrder = 10
+		local alphaBox = Create("TextBox", {
+			Size = UDim2.fromScale(1, 1),
+			Font = Enum.Font.GothamBold,
+			TextSize = 12,
+			TextXAlignment = Enum.TextXAlignment.Center,
+			ClearTextOnFocus = false,
+			Parent = alphaField,
+		})
+		theme:Bind(alphaBox, { TextColor3 = "Text" })
+		popMaid:Give(alphaBox.FocusLost:Connect(function()
+			local number = tonumber(string.match(alphaBox.Text, "-?%d+%.?%d*"))
+			if number then
+				alpha = Utility.Clamp(number, 0, 100) / 100
+				commit()
+			else
+				render()
+			end
+		end))
+		ui.Alpha = alphaBox
+		renderFields()
+	end
+
+	local function open()
+		local popMaid = Utility.Maid.new()
+		local popup = Popup(window, {
+			Width = 264,
+			OnClose = function()
+				popMaid:Clean()
+				ui = nil
+				el._ui = nil
+			end,
+		})
+		local card = popup.Card
+		ui = {}
+		el._ui = ui
+		el.Popup = popup
+
+		--// header
+		local header = Create("Frame", { Size = UDim2.new(1, 0, 0, 22), BackgroundTransparency = 1, LayoutOrder = 1, Parent = card })
+		local title = Create("TextLabel", {
+			Size = UDim2.new(1, -60, 1, 0),
+			Text = opts.Title or "Color",
+			Font = Enum.Font.GothamBold,
+			TextSize = 14,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			Parent = header,
+		})
+		Base.Gradient(theme, title, 0)
+
+		ui.Preview = Create("Frame", {
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, -30, 0.5, 0),
+			Size = UDim2.fromOffset(32, 16),
+			BackgroundColor3 = current(),
+			Parent = header,
+		})
+		Utility.Corner(ui.Preview, 5)
+		Utility.Stroke(ui.Preview, WHITE, 0.6, 1)
+
+		local closeButton = Create("TextButton", {
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.fromScale(1, 0.5),
+			Size = UDim2.fromOffset(22, 22),
+			Parent = header,
+		})
+		local closeGlyph = Icons.Close(closeButton, 12, 2)
+		Icons.Bind(theme, closeGlyph, "SubText")
+		popMaid:Give(closeButton.MouseButton1Click:Connect(function()
+			popup:Close()
+		end))
+
+		--// square + sliders
+		local area = Create("Frame", { Size = UDim2.new(1, 0, 0, SQUARE), BackgroundTransparency = 1, LayoutOrder = 2, Parent = card })
+
+		ui.Square = Create("Frame", {
+			Size = UDim2.fromOffset(SQUARE, SQUARE),
+			BackgroundColor3 = Color3.fromHSV(hue, 1, 1),
+			Parent = area,
+		})
+		Utility.Corner(ui.Square, 8)
+		local whiteLayer = Create("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = WHITE, Parent = ui.Square })
+		Utility.Corner(whiteLayer, 8)
+		Create("UIGradient", { Transparency = NumberSequence.new(0, 1), Parent = whiteLayer })
+		local blackLayer = Create("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0), Parent = ui.Square })
+		Utility.Corner(blackLayer, 8)
+		Create("UIGradient", { Rotation = 90, Transparency = NumberSequence.new(1, 0), Parent = blackLayer })
+		ui.SquareMarker = marker(ui.Square, 14)
+		local squareHit = Create("TextButton", { Size = UDim2.fromScale(1, 1), ZIndex = 6, Parent = ui.Square })
+
+		local hueBar = Create("Frame", {
+			Position = UDim2.fromOffset(SQUARE + 10, 0),
+			Size = UDim2.fromOffset(BAR, SQUARE),
+			BackgroundColor3 = WHITE,
+			Parent = area,
+		})
+		Utility.Corner(hueBar, Utility.Pill)
+		Create("UIGradient", { Rotation = 90, Color = RAINBOW, Parent = hueBar })
+		ui.HueMarker = marker(hueBar, 16)
+		local hueHit = Create("TextButton", { Size = UDim2.fromScale(1, 1), ZIndex = 6, Parent = hueBar })
+
+		ui.AlphaBar = Create("Frame", {
+			Position = UDim2.fromOffset(SQUARE + 10 + BAR + 8, 0),
+			Size = UDim2.fromOffset(BAR, SQUARE),
+			BackgroundColor3 = current(),
+			Parent = area,
+		})
+		Utility.Corner(ui.AlphaBar, Utility.Pill)
+		Create("UIGradient", { Rotation = 90, Transparency = NumberSequence.new(0, 0.95), Parent = ui.AlphaBar })
+		Utility.Stroke(ui.AlphaBar, WHITE, 0.85, 1)
+		ui.AlphaMarker = marker(ui.AlphaBar, 16)
+		local alphaHit = Create("TextButton", { Size = UDim2.fromScale(1, 1), ZIndex = 6, Parent = ui.AlphaBar })
+
+		local function ratio(frame, position, axis)
+			local origin = axis == "X" and frame.AbsolutePosition.X or frame.AbsolutePosition.Y
+			local length = axis == "X" and frame.AbsoluteSize.X or frame.AbsoluteSize.Y
+			local point = axis == "X" and position.X or position.Y
+			return Utility.Clamp((point - origin) / math.max(length, 1), 0, 1)
+		end
+
+		Utility.DragInput(squareHit, popMaid, nil, function(position)
+			sat = ratio(ui.Square, position, "X")
+			val = 1 - ratio(ui.Square, position, "Y")
+			commit()
+		end)
+		Utility.DragInput(hueHit, popMaid, nil, function(position)
+			hue = ratio(hueBar, position, "Y")
+			commit()
+		end)
+		Utility.DragInput(alphaHit, popMaid, nil, function(position)
+			alpha = 1 - ratio(ui.AlphaBar, position, "Y")
+			commit()
+		end)
+
+		--// mode tabs
+		local tabs = Create("Frame", { Size = UDim2.new(1, 0, 0, 26), BackgroundTransparency = 1, LayoutOrder = 3, Parent = card })
+		Utility.List(tabs, 4, Enum.FillDirection.Horizontal)
+		local row
+		local tabButtons = {}
+
+		local function paintTabs()
+			for name, button in pairs(tabButtons) do
+				local selected = name == mode
+				Tween(button.Background, { BackgroundTransparency = selected and 0.78 or 1 }, 0.2)
+				button.Label.TextColor3 = selected and theme.Tokens.Text or theme.Tokens.SubText
+			end
+		end
+
+		for index, name in ipairs(MODES) do
+			local button = Create("TextButton", {
+				Size = UDim2.new(1 / #MODES, -3, 1, 0),
+				LayoutOrder = index,
+				Parent = tabs,
+			})
+			local background = Create("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = WHITE, BackgroundTransparency = 1, Parent = button })
+			Utility.Corner(background, 7)
+			Base.Gradient(theme, background, 0)
+			local label = Create("TextLabel", {
+				Size = UDim2.fromScale(1, 1),
+				Text = name,
+				Font = Enum.Font.GothamBold,
+				TextSize = 11,
+				TextXAlignment = Enum.TextXAlignment.Center,
+				Parent = button,
+			})
+			tabButtons[name] = { Background = background, Label = label }
+			popMaid:Give(button.MouseButton1Click:Connect(function()
+				ui.SetMode(name)
+			end))
+		end
+
+		ui.SetMode = function(name)
+			mode = name
+			paintTabs()
+			buildFields(row, popMaid)
+		end
+
+		--// fields
+		row = Create("Frame", { Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1, LayoutOrder = 4, Parent = card })
+		Utility.List(row, 6, Enum.FillDirection.Horizontal)
+
+		paintTabs()
+		buildFields(row, popMaid)
+		render()
+	end
+
+	function el:Open()
+		if not ui then
+			open()
+		end
+	end
+
+	function el:Close()
+		if el.Popup and not el.Popup.Closed then
+			el.Popup:Close()
+		end
+	end
 
 	el.Maid:Give(el.Top.MouseButton1Click:Connect(function()
 		if not el.Locked then
-			drawer:Toggle()
+			el:Open()
 		end
 	end))
+
+	el.Maid:Give(function()
+		el:Close()
+	end)
 
 	return Base.Finish(container, el, opts, "Colorpicker")
 end

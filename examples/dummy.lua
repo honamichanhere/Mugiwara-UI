@@ -17,12 +17,18 @@ end
 
 local MugiwaraUI = loadLibrary()
 
+-- Paste an image here (asset id, "rbxassetid://..." or an http(s) URL) to test the wallpaper
+-- and the image cards. Leave empty to skip. URLs need request + writefile + getcustomasset.
+local DEMO_IMAGE = ""
+
 local Window = MugiwaraUI:CreateWindow({
 	Title = "Mugiwara Dummy",
-	Subtitle = "v" .. MugiwaraUI.Version .. " - test hub",
+	Subtitle = "test hub - UI v" .. MugiwaraUI.Version,
+	Version = "v1.0.0", -- badge next to the title
 	Folder = "MugiwaraDummy",
 	Size = UDim2.fromOffset(660, 440),
 	ToggleKey = Enum.KeyCode.RightShift,
+	Background = DEMO_IMAGE ~= "" and { Image = DEMO_IMAGE, Transparency = 0.55 } or nil,
 })
 
 local function say(title, content, kind)
@@ -30,8 +36,9 @@ local function say(title, content, kind)
 end
 
 --// 1. Dashboard ---------------------------------------------------------------
-Window:SidebarLabel("Overview")
-local Dashboard = Window:Tab({ Title = "Dashboard" })
+-- Tab sections: titled, collapsible groups of tabs in the sidebar
+local Overview = Window:TabSection({ Title = "Overview" })
+local Dashboard = Overview:Tab({ Title = "Dashboard" })
 
 local status = Dashboard:Paragraph({ Title = "Session", Desc = "Starting..." })
 local startedAt = os.clock()
@@ -76,11 +83,17 @@ Dashboard:Button({
 	end,
 })
 
+Dashboard:Paragraph({
+	Title = "Window controls",
+	Desc = "Top bar: theme menu, minimize, maximize, close. Drag the top bar to move, drag the bottom-right grip to resize.",
+	Image = DEMO_IMAGE ~= "" and DEMO_IMAGE or nil, -- image card: fades in from the right
+})
+
 Dashboard:Label({ Title = "Executor: " .. tostring(MugiwaraUI.Compat.Executor) })
 Dashboard:Label({ Title = "File access: " .. (MugiwaraUI.Compat.FilesSupported and "yes" or "no (configs disabled)") })
 
 --// 2. Elements ----------------------------------------------------------------
-local Elements = Window:Tab({ Title = "Elements" })
+local Elements = Overview:Tab({ Title = "Elements" })
 
 local master = Elements:Toggle({
 	Title = "Master switch",
@@ -230,11 +243,22 @@ end)
 local Group = Elements:Section({ Title = "Collapsible section", Opened = true })
 Group:Toggle({ Title = "A toggle inside a section", Flag = "insection" })
 Group:Label({ Title = "Sections hold every element type." })
-local nested = Group:Section({ Title = "Nested section", Opened = false })
+-- Sections nest up to 2 levels: tab > section > section ("double section")
+local nested = Group:Section({ Title = "Double section (2nd level)", Opened = false })
 nested:Button({
 	Title = "Nested button",
 	Callback = function()
 		act("nested button")
+	end,
+})
+nested:Button({
+	Title = "Try a 3rd level",
+	Desc = "Not allowed: the library raises an error, caught here with pcall.",
+	Callback = function()
+		local ok, err = pcall(function()
+			nested:Section({ Title = "Too deep" })
+		end)
+		say(ok and "Allowed?!" or "Rejected", tostring(err), ok and "warning" or "info")
 	end,
 })
 local hideMe = Group:Button({
@@ -249,8 +273,8 @@ hideMe:SetCallback(function()
 end)
 
 --// 3. Notifications & dialogs -------------------------------------------------
-Window:SidebarLabel("Feedback")
-local Notifs = Window:Tab({ Title = "Notifications" })
+local Feedback = Window:TabSection({ Title = "Feedback" })
+local Notifs = Feedback:Tab({ Title = "Notifications" })
 
 Notifs:Button({ Title = "Info", Callback = function() say("Info", "Something neutral happened.", "info") end })
 Notifs:Button({ Title = "Success", Callback = function() say("Success", "Everything worked.", "success") end })
@@ -310,17 +334,38 @@ Notifs:Button({
 
 --// 4. Window controls ---------------------------------------------------------
 Window:SidebarDivider()
-Window:SidebarLabel("Settings")
-local Settings = Window:Tab({ Title = "Window" })
+local SettingsGroup = Window:TabSection({ Title = "Settings" })
+local Settings = SettingsGroup:Tab({ Title = "Window" })
 
-Settings:Dropdown({
+Settings:Paragraph({
 	Title = "Theme",
-	Desc = "Switches live: every color re-tints.",
-	Values = MugiwaraUI:GetThemes(),
-	Value = MugiwaraUI:GetTheme(),
-	Searchable = false,
-	Callback = function(name)
-		MugiwaraUI:SetTheme(name)
+	Desc = "The theme menu moved to the top bar (the colored dot). Pick one there and everything re-tints live.",
+})
+
+Settings:Button({
+	Title = "Maximize / restore",
+	Desc = "Same as the square button in the top bar.",
+	Callback = function()
+		Window:ToggleMaximized()
+	end,
+})
+
+Settings:Input({
+	Title = "Wallpaper",
+	Desc = "Asset id or URL. Empty removes it.",
+	Placeholder = "rbxassetid://...",
+	Callback = function(text)
+		Window:SetBackground(text)
+	end,
+})
+
+Settings:Slider({
+	Title = "Wallpaper strength",
+	Desc = "Applies the next time a wallpaper is set.",
+	Value = { Min = 0, Max = 100, Default = 45 },
+	Suffix = "%",
+	Callback = function(value)
+		Window.BackgroundImage.ImageTransparency = 1 - value / 100
 	end,
 })
 
@@ -389,7 +434,7 @@ Settings:Button({
 })
 
 --// 5. Configs -----------------------------------------------------------------
-local Configs = Window:Tab({ Title = "Configs" })
+local Configs = SettingsGroup:Tab({ Title = "Configs" })
 Configs:Paragraph({
 	Title = "How it works",
 	Desc = "Every element with a Flag is saved. Change a few values on the Elements tab, save a config here, change them again, then load it back.",

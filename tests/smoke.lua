@@ -13,7 +13,12 @@ local UI = assert(load(DIST_SOURCE, "=dist"))()
 check(type(UI.CreateWindow) == "function", "CreateWindow missing")
 check(UI.Version ~= "@VERSION@", "version placeholder was not replaced")
 
-local Window = UI:CreateWindow({ Title = "Test", Subtitle = "sub", Folder = "SmokeTest" })
+local Window = UI:CreateWindow({
+	Title = "Test", Subtitle = "sub", Folder = "SmokeTest", Version = "v9.9",
+	Background = { Image = "rbxassetid://123", Transparency = 0.6 },
+})
+check(Window.VersionPill.Visible and Window.VersionLabel.Text == "v9.9", "version badge")
+check(Window.BackgroundImage.Visible and Window.BackgroundImage.Image == "rbxassetid://123", "wallpaper from asset id")
 check(Window.Opened, "window should open on creation")
 
 --// tabs + elements
@@ -92,7 +97,34 @@ picker:Set(Color3.fromRGB(0, 255, 0))
 check(color ~= nil and color.G > 0.99, "colorpicker set")
 picker:Set("#0000FF")
 check(picker:Get().B > 0.99, "colorpicker hex string")
+
+--// color picker popup
+picker:Set(Color3.fromRGB(255, 0, 0))
 picker.Top.MouseButton1Click:Fire()
+local ui = picker._ui
+check(ui ~= nil and Window.ActivePopup ~= nil, "color picker popup opens")
+ui.Boxes[1].Text = "#112233"
+ui.Boxes[1].FocusLost:Fire(true)
+check(math.abs(picker:Get().B - 0x33 / 255) < 0.01, "hex field applies")
+ui.SetMode("RGB")
+ui.Boxes[1].Text = "255"
+ui.Boxes[1].FocusLost:Fire(true)
+check(picker:Get().R > 0.99, "rgb field applies")
+ui.SetMode("HSV")
+ui.Boxes[2].Text = "0"
+ui.Boxes[2].FocusLost:Fire(true)
+check(picker:Get().R == picker:Get().G, "hsv saturation 0 gives gray")
+ui.SetMode("HSL")
+ui.Boxes[3].Text = "50"
+ui.Boxes[3].FocusLost:Fire(true)
+check(picker:Get().R > 0.49 and picker:Get().R < 0.51, "hsl lightness applies")
+ui.Alpha.Text = "50%"
+ui.Alpha.FocusLost:Fire(true)
+check(math.abs(picker:GetTransparency() - 0.5) < 0.001, "opacity field is 0-100")
+ui.Boxes[1].Text = "garbage"
+ui.Boxes[1].FocusLost:Fire(true) -- must not error
+picker:Close()
+check(picker._ui == nil and Window.ActivePopup == nil, "color picker popup closes")
 
 Main:Label({ Title = "label" })
 Main:Label("string label")
@@ -100,12 +132,43 @@ Main:Paragraph({ Title = "p", Desc = "d" })
 Main:Divider()
 Main:Divider({ Title = "caption" })
 
+Main:Button({ Title = "Image card", Image = "rbxassetid://1" })
 local section = Main:Section({ Title = "Sec", Opened = true })
+local inner2 = section:Section({ Title = "Double", Opened = true })
+inner2:Toggle({ Title = "deep", Flag = "deep" })
+local tooDeep, message = pcall(function() return inner2:Section({ Title = "Triple" }) end)
+check(not tooDeep and string.find(message, "2 levels"), "third section level must be rejected")
 local inner = section:Toggle({ Title = "inside", Flag = "inside" })
 check(inner.Type == "Toggle", "section:Toggle must create a toggle element")
 section:SetOpen(false)
 section:ToggleOpen()
 check(section.Open == true, "section reopen")
+
+--// tab sections
+local group = Window:TabSection({ Title = "Group" })
+local groupTab = group:Tab({ Title = "InGroup" })
+groupTab:Toggle({ Title = "in group" })
+group:SetOpen(false)
+group:ToggleOpen()
+check(group.Open and #group.Tabs == 1, "tab section")
+Window:SelectTab(groupTab)
+check(Window.CurrentTab == groupTab, "select tab inside a tab section")
+Window:SelectTab(Main)
+
+--// maximize + theme menu + background
+Window:SetMaximized(true)
+check(Window.Maximized and not Window._squareGlyph.Visible, "maximize")
+Window:SetMaximized(false)
+check(not Window.Maximized and Window._squareGlyph.Visible, "restore")
+task.flush()
+local menu = Window:OpenThemeMenu()
+check(Window.ActivePopup == menu, "theme menu opens")
+menu:Close()
+Window:SetBackground(nil)
+check(not Window.BackgroundImage.Visible, "wallpaper removed")
+Window:SetBackground("https://example.com/x.png") -- no request/getcustomasset in the mock: must not error
+Window:SetVersion("")
+check(not Window.VersionPill.Visible, "version hidden")
 
 --// locking / visibility / destroy
 button:Lock(true)
@@ -132,6 +195,7 @@ check(UI:SetTheme("DoesNotExist") == false, "unknown theme")
 UI:AddTheme("Custom", { Accent = Color3.fromRGB(1, 2, 3), Gradient = { Color3.fromRGB(1, 1, 1), Color3.fromRGB(2, 2, 2) } })
 check(UI:SetTheme("Custom"), "custom theme")
 UI:SetTheme("Gear5")
+MOCK.services.RunService.Heartbeat:Fire() -- gradient cross-fade runs without error
 
 --// config round trip
 check(Window:SaveConfig("one"), "save config")

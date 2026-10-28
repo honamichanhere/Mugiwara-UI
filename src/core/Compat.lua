@@ -113,6 +113,53 @@ function Compat.DeleteFile(path)
 	return false
 end
 
+--// Images --------------------------------------------------------------------
+local function hashText(text)
+	local hash = 5381
+	for index = 1, #text do
+		hash = (hash * 33 + string.byte(text, index)) % 4294967296
+	end
+	return string.format("%08x", hash)
+end
+
+-- Turns an asset id / "rbxassetid://..." / http(s) URL into something an ImageLabel accepts.
+-- URLs are downloaded once into <folder>/cache and served through getcustomasset
+-- (needs request + writefile + getcustomasset). May yield, so call it from a task.
+function Compat.ResolveImage(source, folder)
+	if type(source) == "number" then
+		return "rbxassetid://" .. source
+	end
+	if type(source) ~= "string" or source == "" then
+		return nil
+	end
+	if string.find(source, "^rbxasset") then
+		return source
+	end
+	if tonumber(source) then
+		return "rbxassetid://" .. source
+	end
+	if string.find(source, "^https?://") then
+		local requester = request or http_request or (syn and syn.request)
+		local assetOf = getcustomasset or getsynasset
+		if not (requester and assetOf and Compat.FilesSupported) then
+			return nil
+		end
+		local path = (folder or "MugiwaraUI") .. "/cache/" .. hashText(source) .. ".png"
+		if not Compat.FileExists(path) then
+			local response = try(requester, { Url = source, Method = "GET" })
+			if not (response and response.Body and (response.StatusCode == nil or response.StatusCode == 200)) then
+				return nil
+			end
+			Compat.EnsureFolder((folder or "MugiwaraUI") .. "/cache")
+			if not Compat.WriteFile(path, response.Body) then
+				return nil
+			end
+		end
+		return try(assetOf, path)
+	end
+	return nil
+end
+
 --// Clipboard -----------------------------------------------------------------
 function Compat.SetClipboard(text)
 	local setter = setclipboard or toclipboard or (Clipboard and Clipboard.set)

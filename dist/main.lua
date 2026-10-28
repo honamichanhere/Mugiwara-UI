@@ -1,4 +1,4 @@
--- Mugiwara UI v0.1.0
+-- Mugiwara UI v0.2.0
 -- Glass + neon Gear 5 UI library for Roblox script hubs.
 -- https://github.com/honamichanhere/Mugiwara-UI  |  MIT License
 
@@ -23,6 +23,7 @@ __modules["components/Base"] = function(Import)
 --// expandable drawer, flag registration).
 
 local Utility = Import("core/Utility")
+local Compat = Import("core/Compat")
 
 local Create, Tween = Utility.Create, Utility.Tween
 local WHITE = Color3.new(1, 1, 1)
@@ -119,6 +120,36 @@ function Base.Card(container, opts, rightWidth, rightHeight)
 	local stroke = Utility.Stroke(frame, WHITE, 0.9, 1)
 	theme:Bind(frame, { BackgroundColor3 = "Card", BackgroundTransparency = "CardAlpha" })
 	theme:Bind(stroke, { Color = "Stroke", Transparency = "StrokeAlpha" })
+
+	-- Optional card background image (opts.Image = asset id / rbxassetid / http URL).
+	-- It fades in from the right so the title on the left stays readable.
+	if opts.Image then
+		local image = Create("ImageLabel", {
+			Name = "Image",
+			Size = UDim2.fromScale(1, 1),
+			ScaleType = Enum.ScaleType.Crop,
+			ImageTransparency = 1,
+			Visible = false,
+			Parent = frame,
+		})
+		Utility.Corner(image, 10)
+		Create("UIGradient", {
+			Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 1),
+				NumberSequenceKeypoint.new(0.4, 0.75),
+				NumberSequenceKeypoint.new(1, 0.05),
+			}),
+			Parent = image,
+		})
+		task.spawn(function()
+			local asset = Compat.ResolveImage(opts.Image, window.Folder)
+			if asset and image.Parent then
+				image.Image = asset
+				image.Visible = true
+				Tween(image, { ImageTransparency = opts.ImageTransparency or 0.25 }, 0.6)
+			end
+		end)
+	end
 
 	local content = Create("Frame", {
 		Name = "Content",
@@ -333,11 +364,15 @@ local Create, Tween = Utility.Create, Utility.Tween
 local Container = {}
 Container.__index = Container
 
-function Container.new(window, holder, page)
+-- tab -> section -> section is the deepest allowed layout ("double section")
+Container.MaxSectionDepth = 2
+
+function Container.new(window, holder, page, depth)
 	return setmetatable({
 		Window = window,
 		Holder = holder,
 		Page = page,
+		Depth = depth or 0, -- how many sections deep this container is
 		Elements = {},
 		_order = 0,
 	}, Container)
@@ -392,6 +427,9 @@ end
 -- Collapsible group. Returns another Container, so sections can hold any element.
 function Container:Section(opts)
 	opts = opts or {}
+	if self.Depth >= Container.MaxSectionDepth then
+		error("MugiwaraUI: sections can only be nested " .. Container.MaxSectionDepth .. " levels deep (section > section)", 2)
+	end
 	local window = self.Window
 	local theme = window.Theme
 
@@ -460,7 +498,7 @@ function Container:Section(opts)
 	Utility.Padding(bodyInner, 2, 12, 10, 10)
 	Utility.List(bodyInner, 8)
 
-	local section = Container.new(window, bodyInner, self.Page)
+	local section = Container.new(window, bodyInner, self.Page, self.Depth + 1)
 	section.Frame = wrap
 	section.Open = opts.Opened ~= false
 
@@ -849,6 +887,93 @@ end
 return Notification
 end
 
+__modules["components/Popup"] = function(Import)
+--// Popup: floating card drawn over the window (color picker, theme menu).
+--// Clicking outside closes it. Only one popup is open at a time.
+
+local Utility = Import("core/Utility")
+local Base = Import("components/Base")
+
+local Create, Tween = Utility.Create, Utility.Tween
+
+-- opts: Width, Dim (default true), AnchorPoint, Position, OnClose
+return function(window, opts)
+	opts = opts or {}
+	local theme = window.Theme
+
+	if window.ActivePopup then
+		window.ActivePopup:Close(true)
+	end
+
+	local overlay = Create("TextButton", {
+		Name = "Popup",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.new(0, 0, 0),
+		BackgroundTransparency = 1,
+		ZIndex = 60,
+		Parent = window.Frame,
+	})
+	local dim = opts.Dim ~= false
+	if dim then
+		Tween(overlay, { BackgroundTransparency = 0.5 }, 0.25)
+	end
+
+	-- the card is anchored where it should grow from, so the UIScale pop is centered on it
+	local card = Create("CanvasGroup", {
+		Name = "Card",
+		AnchorPoint = opts.AnchorPoint or Vector2.new(0.5, 0.5),
+		Position = opts.Position or UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(0, opts.Width or 280, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundColor3 = Color3.new(0, 0, 0),
+		GroupTransparency = 1,
+		Active = true,
+		ZIndex = 61,
+		Parent = overlay,
+	})
+	Utility.Corner(card, 14)
+	theme:Bind(card, { BackgroundColor3 = "Popup", BackgroundTransparency = "PopupAlpha" })
+	local outline = Utility.Stroke(card, Color3.new(1, 1, 1), 0.3, 1.4)
+	Base.Gradient(theme, outline, 45)
+	Utility.Padding(card, 14, 14, 14, 14)
+	Utility.List(card, 10)
+
+	local pop = Create("UIScale", { Scale = 0.94, Parent = card })
+	Tween(pop, { Scale = 1 }, 0.35, Enum.EasingStyle.Quint)
+	Tween(card, { GroupTransparency = 0 }, 0.2)
+
+	local popup = { Card = card, Overlay = overlay, Closed = false }
+
+	function popup:Close(instant)
+		if self.Closed then
+			return
+		end
+		self.Closed = true
+		if window.ActivePopup == self then
+			window.ActivePopup = nil
+		end
+		if instant then
+			overlay:Destroy()
+		else
+			Tween(pop, { Scale = 0.95 }, 0.18)
+			Tween(card, { GroupTransparency = 1 }, 0.16)
+			Tween(overlay, { BackgroundTransparency = 1 }, 0.18)
+			task.delay(0.2, function()
+				overlay:Destroy()
+			end)
+		end
+		Utility.SafeCall(opts.OnClose)
+	end
+
+	overlay.MouseButton1Click:Connect(function()
+		popup:Close()
+	end)
+
+	window.ActivePopup = popup
+	return popup
+end
+end
+
 __modules["components/Tab"] = function(Import)
 --// Tab: a sidebar button + a scrolling page. It is also a Container, so elements
 --// are added straight onto it (`tab:Toggle({ ... })`).
@@ -860,7 +985,8 @@ local Container = Import("components/Container")
 
 local Create, Tween = Utility.Create, Utility.Tween
 
-return function(window, opts)
+-- `parent` is the sidebar list the button goes into (a TabSection body); defaults to the main list.
+return function(window, opts, parent)
 	opts = opts or {}
 	local theme = window.Theme
 	local name = opts.Title or "Tab"
@@ -888,7 +1014,7 @@ return function(window, opts)
 		Name = name,
 		Size = UDim2.new(1, 0, 0, 40),
 		LayoutOrder = window:NextTabOrder(),
-		Parent = window.TabList,
+		Parent = parent or window.TabList,
 	})
 
 	local background = Create("Frame", {
@@ -969,8 +1095,10 @@ return function(window, opts)
 		end
 
 		if state then
+			-- slide up + fade in
+			page.Position = UDim2.fromOffset(0, 14)
 			page.Visible = true
-			Tween(page, { GroupTransparency = 0 }, 0.28)
+			Tween(page, { GroupTransparency = 0, Position = UDim2.new() }, 0.4)
 		else
 			Tween(page, { GroupTransparency = 1 }, 0.14)
 			task.delay(0.16, function()
@@ -1025,6 +1153,140 @@ return function(window, opts)
 end
 end
 
+__modules["components/TabSection"] = function(Import)
+--// TabSection: a titled, collapsible group of tabs inside the sidebar.
+--//   local combat = Window:TabSection({ Title = "Combat" })
+--//   combat:Tab({ Title = "Aimbot" })
+--// Tab sections are one level only (they cannot contain other tab sections).
+
+local Utility = Import("core/Utility")
+local Icons = Import("core/Icons")
+
+local Create, Tween = Utility.Create, Utility.Tween
+
+-- opts: Title, Opened (default true), Collapsible (default true)
+return function(window, opts)
+	opts = opts or {}
+	local theme = window.Theme
+	local collapsible = opts.Collapsible ~= false
+
+	local wrap = Create("Frame", {
+		Name = opts.Title or "TabSection",
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		LayoutOrder = window:NextTabOrder(),
+		Parent = window.TabList,
+	})
+	Utility.List(wrap, 2)
+
+	local header = Create("TextButton", {
+		Name = "Header",
+		Size = UDim2.new(1, 0, 0, 26),
+		LayoutOrder = 1,
+		Parent = wrap,
+	})
+	local caption = Create("TextLabel", {
+		Position = UDim2.fromOffset(10, 0),
+		Size = UDim2.new(1, -34, 1, 0),
+		Text = string.upper(opts.Title or "Group"),
+		Font = Enum.Font.GothamBold,
+		TextSize = 10,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Parent = header,
+	})
+	theme:Bind(caption, { TextColor3 = "Muted" })
+
+	local chevron
+	if collapsible then
+		chevron = Icons.Chevron(header, 10, 2)
+		chevron.AnchorPoint = Vector2.new(0.5, 0.5)
+		chevron.Position = UDim2.new(1, -16, 0.5, 0)
+		Icons.Bind(theme, chevron, "Muted")
+	end
+
+	local body = Create("Frame", {
+		Name = "Body",
+		Size = UDim2.new(1, 0, 0, 0),
+		BackgroundTransparency = 1,
+		ClipsDescendants = true,
+		LayoutOrder = 2,
+		Parent = wrap,
+	})
+	local bodyInner = Create("Frame", {
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		Parent = body,
+	})
+	Utility.List(bodyInner, 4)
+
+	local group = { Frame = wrap, Body = bodyInner, Open = opts.Opened ~= false, Tabs = {} }
+
+	local function bodyHeight()
+		return bodyInner.AbsoluteSize.Y / window.UIScale.Scale
+	end
+
+	local function update(animate)
+		local size = UDim2.new(1, 0, 0, group.Open and bodyHeight() or 0)
+		if animate then
+			Tween(body, { Size = size }, 0.3)
+		else
+			body.Size = size
+		end
+		if chevron then
+			Tween(chevron, { Rotation = group.Open and 0 or -90 }, 0.25)
+		end
+	end
+
+	function group:Tab(tabOpts)
+		local tab = window:_createTab(tabOpts, bodyInner)
+		table.insert(self.Tabs, tab)
+		return tab
+	end
+
+	function group:SetOpen(open)
+		self.Open = open
+		update(true)
+	end
+
+	function group:ToggleOpen()
+		self:SetOpen(not self.Open)
+	end
+
+	function group:SetTitle(text)
+		caption.Text = string.upper(text)
+	end
+
+	function group:Destroy()
+		for _, tab in ipairs(self.Tabs) do
+			tab:Destroy()
+		end
+		wrap:Destroy()
+	end
+
+	bodyInner:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		if group.Open then
+			body.Size = UDim2.new(1, 0, 0, bodyHeight())
+		end
+	end)
+
+	if collapsible then
+		header.MouseButton1Click:Connect(function()
+			group:ToggleOpen()
+		end)
+	else
+		header.Active = false
+	end
+
+	if chevron then
+		chevron.Rotation = group.Open and 0 or -90
+	end
+	update(false)
+	return group
+end
+end
+
 __modules["components/Window"] = function(Import)
 --// Window: glass shell with a neon rotating border, topbar, tab sidebar and page area.
 
@@ -1038,15 +1300,20 @@ local Utility = Import("core/Utility")
 local Compat = Import("core/Compat")
 local Icons = Import("core/Icons")
 local Config = Import("core/Config")
+local Theme = Import("core/Theme")
 local Base = Import("components/Base")
 local Tab = Import("components/Tab")
+local TabSection = Import("components/TabSection")
 local Dialog = Import("components/Dialog")
+local Popup = Import("components/Popup")
 
 local Create, Tween = Utility.Create, Utility.Tween
 local WHITE = Color3.new(1, 1, 1)
 
 local TOPBAR = 54
 local FOOTER = 56
+local MARGIN = 24 -- breathing room kept around a maximized window
+local MORPH_TIME = 0.45
 
 -- Concentric strokes around the window fake a soft neon glow without any image asset.
 local NEON_LAYERS = {
@@ -1080,6 +1347,8 @@ local function spin(maid, gradient, seconds)
 	end)
 end
 
+-- opts: Title, Subtitle, Version, Icon, Size, MinSize, MaxSize, Resizable, Folder, ToggleKey, Blur,
+--       Neon, OpenButton, ConfirmClose, ShowUser, SideBarWidth, ThemeSwitcher, Background
 function Window.new(library, opts)
 	opts = opts or {}
 	local theme = library.Theme
@@ -1094,6 +1363,7 @@ function Window.new(library, opts)
 	self.Title = opts.Title or "Mugiwara UI"
 	self.ToggleKey = opts.ToggleKey or Enum.KeyCode.RightShift
 	self.Opened = false
+	self.Maximized = false
 	self.UserScale = 1
 	self._tabOrder = 0
 	self.OnDestroy = opts.OnDestroy
@@ -1128,8 +1398,16 @@ function Window.new(library, opts)
 	self.Main = main
 	self.UIScale = Create("UIScale", { Parent = main })
 
-	-- everything inside `pop` so the open animation scales around the center
-	local pop = Create("Frame", { Name = "Pop", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Parent = main })
+	-- Everything lives in `pop`. It is anchored at its center: UIScale scales around the
+	-- anchor point, so a top-left anchor made open / close / minimize grow from the corner.
+	local pop = Create("Frame", {
+		Name = "Pop",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Parent = main,
+	})
 	self.PopScale = Create("UIScale", { Parent = pop })
 
 	--// neon glow
@@ -1163,7 +1441,24 @@ function Window.new(library, opts)
 	theme:Bind(win, { BackgroundColor3 = "Background", BackgroundTransparency = "BackgroundAlpha" })
 	self.Frame = win
 
-	-- ambient accent wash + glass sheen
+	-- optional wallpaper (Window:SetBackground) with a dark scrim to keep text readable
+	self.BackgroundImage = Create("ImageLabel", {
+		Name = "Wallpaper",
+		Size = UDim2.fromScale(1, 1),
+		ScaleType = Enum.ScaleType.Crop,
+		ImageTransparency = 1,
+		Visible = false,
+		Parent = win,
+	})
+	self.BackgroundScrim = Create("Frame", {
+		Name = "Scrim",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.new(0, 0, 0),
+		BackgroundTransparency = 1,
+		Visible = false,
+		Parent = win,
+	})
+
 	-- one UIGradient per instance: Roblox ignores extra ones, so color + transparency share it
 	local wash = Create("Frame", { Name = "Wash", Size = UDim2.fromScale(1, 1), BackgroundColor3 = WHITE, Parent = win })
 	Base.Gradient(theme, wash, 35).Transparency = NumberSequence.new({
@@ -1230,22 +1525,57 @@ function Window.new(library, opts)
 	end
 
 	local hasSubtitle = opts.Subtitle ~= nil or opts.Author ~= nil
+	local titleRow = Create("Frame", {
+		Name = "TitleRow",
+		Position = UDim2.new(0, 56, 0, hasSubtitle and 8 or 0),
+		Size = UDim2.new(1, -230, 0, hasSubtitle and 22 or TOPBAR),
+		BackgroundTransparency = 1,
+		ClipsDescendants = true,
+		Parent = topbar,
+	})
+	Utility.List(titleRow, 8, Enum.FillDirection.Horizontal, nil, Enum.VerticalAlignment.Center)
+
 	local titleLabel = Create("TextLabel", {
-		Position = UDim2.new(0, 56, 0, hasSubtitle and 9 or 0),
-		Size = UDim2.new(1, -160, 0, hasSubtitle and 20 or TOPBAR),
+		Size = UDim2.fromOffset(0, 20),
+		AutomaticSize = Enum.AutomaticSize.X,
 		Text = self.Title,
 		Font = Enum.Font.GothamBold,
 		TextSize = 16,
-		TextTruncate = Enum.TextTruncate.AtEnd,
-		Parent = topbar,
+		LayoutOrder = 1,
+		Parent = titleRow,
 	})
 	Base.Gradient(theme, titleLabel, 0)
 	self.TitleLabel = titleLabel
 
+	-- version badge next to the title
+	local versionPill = Create("Frame", {
+		Name = "Version",
+		Size = UDim2.fromOffset(0, 16),
+		AutomaticSize = Enum.AutomaticSize.X,
+		BackgroundColor3 = WHITE,
+		LayoutOrder = 2,
+		Visible = false,
+		Parent = titleRow,
+	})
+	Utility.Corner(versionPill, Utility.Pill)
+	Utility.Padding(versionPill, 0, 0, 8, 8)
+	Base.Gradient(theme, versionPill, 0)
+	local versionLabel = Create("TextLabel", {
+		Size = UDim2.fromOffset(0, 16),
+		AutomaticSize = Enum.AutomaticSize.X,
+		Font = Enum.Font.GothamBold,
+		TextSize = 10,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		Parent = versionPill,
+	})
+	theme:Bind(versionLabel, { TextColor3 = "OnAccent" })
+	self.VersionPill = versionPill
+	self.VersionLabel = versionLabel
+
 	if hasSubtitle then
 		local subtitle = Create("TextLabel", {
-			Position = UDim2.new(0, 56, 0, 29),
-			Size = UDim2.new(1, -160, 0, 14),
+			Position = UDim2.new(0, 56, 0, 30),
+			Size = UDim2.new(1, -230, 0, 14),
 			Text = opts.Subtitle or opts.Author,
 			Font = Enum.Font.Gotham,
 			TextSize = 11,
@@ -1256,7 +1586,23 @@ function Window.new(library, opts)
 		self.SubtitleLabel = subtitle
 	end
 
-	local function controlButton(offset, drawGlyph, tint)
+	local function hoverFeedback(button, glyphs, tint)
+		button.MouseEnter:Connect(function()
+			Tween(button, { BackgroundTransparency = 0.88 }, 0.15)
+			for _, glyph in ipairs(glyphs) do
+				Icons.SetColor(glyph, tint and theme.Tokens[tint] or theme.Tokens.Text)
+			end
+		end)
+		button.MouseLeave:Connect(function()
+			Tween(button, { BackgroundTransparency = 1 }, 0.2)
+			for _, glyph in ipairs(glyphs) do
+				Icons.SetColor(glyph, theme.Tokens.SubText)
+			end
+		end)
+	end
+
+	-- 30x30 hit area; glyphs are centered inside it
+	local function controlButton(offset)
 		local button = Create("TextButton", {
 			AnchorPoint = Vector2.new(1, 0.5),
 			Position = UDim2.new(1, offset, 0.5, 0),
@@ -1266,21 +1612,46 @@ function Window.new(library, opts)
 			Parent = topbar,
 		})
 		Utility.Corner(button, 9)
-		local glyph = drawGlyph(button, 14, 2)
-		Icons.Bind(theme, glyph, "SubText")
-		button.MouseEnter:Connect(function()
-			Tween(button, { BackgroundTransparency = 0.88 }, 0.15)
-			Icons.SetColor(glyph, tint and theme.Tokens[tint] or theme.Tokens.Text)
-		end)
-		button.MouseLeave:Connect(function()
-			Tween(button, { BackgroundTransparency = 1 }, 0.2)
-			Icons.SetColor(glyph, theme.Tokens.SubText)
-		end)
 		return button
 	end
 
-	local closeButton = controlButton(-14, Icons.Close, "Danger")
-	local minimizeButton = controlButton(-50, Icons.Minus, nil)
+	local closeButton = controlButton(-14)
+	local closeGlyph = Icons.Bind(theme, Icons.Close(closeButton, 14, 2), "SubText")
+	hoverFeedback(closeButton, { closeGlyph }, "Danger")
+
+	local maximizeButton = controlButton(-50)
+	local squareGlyph = Icons.Bind(theme, Icons.Square(maximizeButton, 14, 2), "SubText")
+	local restoreGlyph = Icons.Bind(theme, Icons.Restore(maximizeButton, 14, 2), "SubText")
+	restoreGlyph.Visible = false
+	hoverFeedback(maximizeButton, { squareGlyph, restoreGlyph }, nil)
+	self._squareGlyph, self._restoreGlyph = squareGlyph, restoreGlyph
+
+	local minimizeButton = controlButton(-86)
+	local minusGlyph = Icons.Bind(theme, Icons.Minus(minimizeButton, 14, 2), "SubText")
+	hoverFeedback(minimizeButton, { minusGlyph }, nil)
+
+	local themeButton
+	if opts.ThemeSwitcher ~= false then
+		themeButton = controlButton(-122)
+		local dot = Create("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromOffset(16, 16),
+			BackgroundColor3 = WHITE,
+			Parent = themeButton,
+		})
+		Utility.Corner(dot, Utility.Pill)
+		Base.Gradient(theme, dot, 45)
+		Utility.Stroke(dot, WHITE, 0.55, 1.2)
+		themeButton.MouseEnter:Connect(function()
+			Tween(themeButton, { BackgroundTransparency = 0.88 }, 0.15)
+			Tween(dot, { Size = UDim2.fromOffset(18, 18) }, 0.2, Enum.EasingStyle.Back)
+		end)
+		themeButton.MouseLeave:Connect(function()
+			Tween(themeButton, { BackgroundTransparency = 1 }, 0.2)
+			Tween(dot, { Size = UDim2.fromOffset(16, 16) }, 0.2)
+		end)
+	end
 
 	local topLine = Create("Frame", {
 		Position = UDim2.fromOffset(0, TOPBAR),
@@ -1423,6 +1794,7 @@ function Window.new(library, opts)
 			Utility.Corner(line, Utility.Pill)
 			theme:Bind(line, { BackgroundColor3 = "Muted" })
 		end
+		self.Grip = grip
 
 		local startSize, startPosition, startPointer
 		Utility.DragInput(grip, maid, function(input)
@@ -1430,7 +1802,7 @@ function Window.new(library, opts)
 			startPosition = main.Position
 			startPointer = input.Position
 		end, function(position)
-			if not startPointer then
+			if not startPointer or self.Maximized then
 				return
 			end
 			local scale = self.UIScale.Scale
@@ -1488,6 +1860,8 @@ function Window.new(library, opts)
 	--// wiring
 	Utility.Draggable(topbar, main, maid, function()
 		return self.UIScale.Scale
+	end, nil, function()
+		return not self.Maximized
 	end)
 
 	maid:Give(closeButton.MouseButton1Click:Connect(function()
@@ -1496,6 +1870,14 @@ function Window.new(library, opts)
 	maid:Give(minimizeButton.MouseButton1Click:Connect(function()
 		self:Close()
 	end))
+	maid:Give(maximizeButton.MouseButton1Click:Connect(function()
+		self:ToggleMaximized()
+	end))
+	if themeButton then
+		maid:Give(themeButton.MouseButton1Click:Connect(function()
+			self:OpenThemeMenu()
+		end))
+	end
 
 	maid:Give(UserInputService.InputBegan:Connect(function(input, processed)
 		if not processed and self.ToggleKey and input.KeyCode == self.ToggleKey then
@@ -1511,6 +1893,12 @@ function Window.new(library, opts)
 	end))
 
 	self.ConfirmClose = opts.ConfirmClose ~= false
+	self:SetVersion(opts.Version)
+	if type(opts.Background) == "table" then
+		self:SetBackground(opts.Background.Image, opts.Background.Transparency, opts.Background.Dim)
+	elseif opts.Background then
+		self:SetBackground(opts.Background)
+	end
 	self:_fit()
 	self:SetBlur(opts.Blur == true)
 	library.Windows[self] = true
@@ -1520,16 +1908,38 @@ function Window.new(library, opts)
 end
 
 --// Layout ------------------------------------------------------------------------
--- Shrinks the window on small screens (phones) so it never overflows the viewport.
-function Window:_fit()
+function Window:_area()
 	local area = self.Gui.AbsoluteSize
 	if area.X <= 0 or area.Y <= 0 then
 		local camera = workspace.CurrentCamera
 		area = camera and camera.ViewportSize or Vector2.new(1280, 720)
 	end
+	return area
+end
+
+-- Shrinks the window on small screens (phones) so it never overflows the viewport.
+function Window:_fitScale(size)
+	local area = self:_area()
+	local fit = math.min(1, (area.X - MARGIN) / size.X, (area.Y - MARGIN) / size.Y)
+	return math.max(fit, 0.4) * self.UserScale
+end
+
+function Window:_maximizedSize()
+	local area = self:_area()
+	return UDim2.fromOffset((area.X - MARGIN) / self.UserScale, (area.Y - MARGIN) / self.UserScale)
+end
+
+function Window:_fit()
+	if self._morphing then
+		return
+	end
+	if self.Maximized then
+		self.UIScale.Scale = self.UserScale
+		self.Main.Size = self:_maximizedSize()
+		return
+	end
 	local size = self.Main.Size
-	local fit = math.min(1, (area.X - 24) / size.X.Offset, (area.Y - 24) / size.Y.Offset)
-	self.UIScale.Scale = math.max(fit, 0.4) * self.UserScale
+	self.UIScale.Scale = self:_fitScale(Vector2.new(size.X.Offset, size.Y.Offset))
 end
 
 function Window:SetScale(scale)
@@ -1542,6 +1952,49 @@ function Window:NextTabOrder()
 	return self._tabOrder
 end
 
+--// Maximize ------------------------------------------------------------------------
+function Window:SetMaximized(state)
+	state = state and true or false
+	if state == self.Maximized then
+		return
+	end
+	local main = self.Main
+	self._morphing = true -- freeze _fit while the size / scale tweens run
+
+	if state then
+		self._restore = { Size = main.Size, Position = main.Position }
+		self.Maximized = true
+		Tween(main, { Size = self:_maximizedSize(), Position = UDim2.fromScale(0.5, 0.5) }, MORPH_TIME)
+		Tween(self.UIScale, { Scale = self.UserScale }, MORPH_TIME)
+	else
+		self.Maximized = false
+		local restore = self._restore or { Size = UDim2.fromOffset(640, 430), Position = UDim2.fromScale(0.5, 0.5) }
+		Tween(main, { Size = restore.Size, Position = restore.Position }, MORPH_TIME)
+		Tween(
+			self.UIScale,
+			{ Scale = self:_fitScale(Vector2.new(restore.Size.X.Offset, restore.Size.Y.Offset)) },
+			MORPH_TIME
+		)
+	end
+
+	self._squareGlyph.Visible = not state
+	self._restoreGlyph.Visible = state
+	if self.Grip then
+		self.Grip.Visible = not state
+	end
+
+	task.delay(MORPH_TIME + 0.05, function()
+		self._morphing = false
+		if not self.Destroyed then
+			self:_fit()
+		end
+	end)
+end
+
+function Window:ToggleMaximized()
+	self:SetMaximized(not self.Maximized)
+end
+
 --// Visibility --------------------------------------------------------------------
 function Window:Open()
 	if self.Opened then
@@ -1550,7 +2003,7 @@ function Window:Open()
 	self.Opened = true
 	self.Main.Visible = true
 	self.PopScale.Scale = 0.9
-	Tween(self.PopScale, { Scale = 1 }, 0.45, Enum.EasingStyle.Back)
+	Tween(self.PopScale, { Scale = 1 }, 0.5, Enum.EasingStyle.Quint)
 	Tween(self.Frame, { GroupTransparency = 0 }, 0.3)
 	for _, neon in ipairs(self.Neon) do
 		Tween(neon.Stroke, { Transparency = neon.Base }, 0.4)
@@ -1558,8 +2011,8 @@ function Window:Open()
 
 	if self.OpenButton then
 		local button = self.OpenButton
-		Tween(button, { Size = UDim2.fromOffset(0, 0) }, 0.15)
-		task.delay(0.15, function()
+		Tween(button, { Size = UDim2.fromOffset(0, 0) }, 0.18)
+		task.delay(0.18, function()
 			if self.Opened then
 				button.Visible = false
 			end
@@ -1573,12 +2026,15 @@ function Window:Close()
 		return
 	end
 	self.Opened = false
-	Tween(self.PopScale, { Scale = 0.93 }, 0.25)
-	Tween(self.Frame, { GroupTransparency = 1 }, 0.22)
+	if self.ActivePopup then
+		self.ActivePopup:Close(true)
+	end
+	Tween(self.PopScale, { Scale = 0.92 }, 0.3, Enum.EasingStyle.Quint)
+	Tween(self.Frame, { GroupTransparency = 1 }, 0.24)
 	for _, neon in ipairs(self.Neon) do
 		Tween(neon.Stroke, { Transparency = 1 }, 0.2)
 	end
-	task.delay(0.26, function()
+	task.delay(0.3, function()
 		if not self.Opened then
 			self.Main.Visible = false
 		end
@@ -1587,7 +2043,7 @@ function Window:Close()
 	if self.OpenButton then
 		local button = self.OpenButton
 		button.Visible = true
-		Tween(button, { Size = UDim2.fromOffset(52, 52) }, 0.4, Enum.EasingStyle.Back)
+		Tween(button, { Size = UDim2.fromOffset(52, 52) }, 0.5, Enum.EasingStyle.Back)
 	end
 	self:_syncBlur()
 end
@@ -1644,14 +2100,143 @@ function Window:_syncBlur()
 	end
 end
 
+--// Background image ------------------------------------------------------------------
+-- image: asset id, "rbxassetid://...", or an http(s) URL (needs request + writefile + getcustomasset).
+-- transparency: 0-1, higher = fainter (default 0.55). dim: 0-1 dark scrim over the image (default 0.45).
+-- Pass nil / "" to remove it.
+function Window:SetBackground(image, transparency, dim)
+	local label, scrim = self.BackgroundImage, self.BackgroundScrim
+	if image == nil or image == "" then
+		label.Visible = false
+		scrim.Visible = false
+		return
+	end
+	local target = transparency or 0.55
+	local shade = dim or 0.45
+	task.spawn(function()
+		local asset = Compat.ResolveImage(image, self.Folder)
+		if not asset or not label.Parent then
+			return
+		end
+		label.Image = asset
+		label.Visible = true
+		scrim.Visible = true
+		Tween(label, { ImageTransparency = target }, 0.6)
+		Tween(scrim, { BackgroundTransparency = 1 - shade }, 0.6)
+	end)
+end
+
+--// Title / version ---------------------------------------------------------------------
+function Window:SetTitle(text)
+	self.Title = text
+	self.TitleLabel.Text = text
+end
+
+function Window:SetVersion(text)
+	if text == nil or text == "" then
+		self.VersionPill.Visible = false
+		return
+	end
+	self.VersionLabel.Text = tostring(text)
+	self.VersionPill.Visible = true
+end
+
+--// Theme menu ---------------------------------------------------------------------------
+function Window:OpenThemeMenu()
+	local library = self.Library
+	local theme = self.Theme
+	local popup = Popup(self, {
+		Width = 210,
+		Dim = false,
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -14, 0, TOPBAR - 2),
+	})
+	local card = popup.Card
+	card:FindFirstChildOfClass("UIListLayout").Padding = UDim.new(0, 4)
+
+	local caption = Create("TextLabel", {
+		Size = UDim2.new(1, 0, 0, 18),
+		Text = "THEME",
+		Font = Enum.Font.GothamBold,
+		TextSize = 10,
+		LayoutOrder = 0,
+		Parent = card,
+	})
+	theme:Bind(caption, { TextColor3 = "Muted" })
+
+	for index, name in ipairs(library:GetThemes()) do
+		local selected = name == library:GetTheme()
+		local row = Create("TextButton", {
+			Size = UDim2.new(1, 0, 0, 34),
+			BackgroundColor3 = WHITE,
+			BackgroundTransparency = selected and 0.86 or 1,
+			LayoutOrder = index,
+			Parent = card,
+		})
+		Utility.Corner(row, 9)
+		row.MouseEnter:Connect(function()
+			if not selected then
+				Tween(row, { BackgroundTransparency = 0.93 }, 0.15)
+			end
+		end)
+		row.MouseLeave:Connect(function()
+			if not selected then
+				Tween(row, { BackgroundTransparency = 1 }, 0.2)
+			end
+		end)
+
+		local swatch = Create("Frame", {
+			AnchorPoint = Vector2.new(0, 0.5),
+			Position = UDim2.new(0, 10, 0.5, 0),
+			Size = UDim2.fromOffset(38, 12),
+			BackgroundColor3 = WHITE,
+			Parent = row,
+		})
+		Utility.Corner(swatch, Utility.Pill)
+		Create("UIGradient", { Color = Theme.Preview(name).GradientSeq, Parent = swatch })
+
+		local label = Create("TextLabel", {
+			Position = UDim2.fromOffset(58, 0),
+			Size = UDim2.new(1, -86, 1, 0),
+			Text = name,
+			Font = selected and Enum.Font.GothamBold or Enum.Font.GothamMedium,
+			TextSize = 13,
+			Parent = row,
+		})
+		theme:Bind(label, { TextColor3 = "Text" })
+
+		if selected then
+			local check = Icons.Check(row, 14, 2)
+			check.AnchorPoint = Vector2.new(0.5, 0.5)
+			check.Position = UDim2.new(1, -18, 0.5, 0)
+			Icons.Bind(theme, check, "Text")
+		end
+
+		row.MouseButton1Click:Connect(function()
+			library:SetTheme(name)
+			popup:Close()
+		end)
+	end
+	return popup
+end
+
 --// Content ---------------------------------------------------------------------
-function Window:Tab(opts)
-	local tab = Tab(self, opts)
+function Window:_createTab(opts, parent)
+	local tab = Tab(self, opts, parent)
 	table.insert(self.Tabs, tab)
 	if not self.CurrentTab then
 		self:SelectTab(tab)
 	end
 	return tab
+end
+
+function Window:Tab(opts)
+	return self:_createTab(opts, nil)
+end
+
+-- Titled, collapsible group of tabs in the sidebar: Window:TabSection({ Title }):Tab({ ... })
+function Window:TabSection(opts)
+	return TabSection(self, opts)
 end
 
 function Window:_removeTab(tab)
@@ -1712,11 +2297,6 @@ function Window:SidebarDivider()
 	})
 	self.Theme:Bind(line, { BackgroundColor3 = "Stroke", BackgroundTransparency = "StrokeAlpha" })
 	return holder
-end
-
-function Window:SetTitle(text)
-	self.Title = text
-	self.TitleLabel.Text = text
 end
 
 function Window:Dialog(opts)
@@ -1877,7 +2457,10 @@ return function(container, opts)
 	local theme = container.Window.Theme
 	local el = Base.Card(container, opts, 34, 26)
 
+	-- centered anchor: the press animation shrinks toward the middle, not the top-left
 	local pill = Create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
 		Size = UDim2.fromScale(1, 1),
 		BackgroundColor3 = Color3.new(1, 1, 1),
 		Parent = el.Right,
@@ -1890,10 +2473,10 @@ return function(container, opts)
 	Icons.Bind(theme, arrow, "OnAccent")
 
 	function el:Fire()
-		Tween(pill, { Size = UDim2.new(1, -4, 1, -4) }, 0.08)
-		task.delay(0.1, function()
+		Tween(pill, { Size = UDim2.new(1, -6, 1, -6) }, 0.08)
+		task.delay(0.09, function()
 			if pill.Parent then
-				Tween(pill, { Size = UDim2.fromScale(1, 1) }, 0.25, Enum.EasingStyle.Back)
+				Tween(pill, { Size = UDim2.fromScale(1, 1) }, 0.35, Enum.EasingStyle.Back)
 			end
 		end)
 		Utility.SafeCall(opts.Callback)
@@ -1915,9 +2498,11 @@ end
 
 __modules["components/elements/Colorpicker"] = function(Import)
 local Utility = Import("core/Utility")
+local Icons = Import("core/Icons")
 local Base = Import("components/Base")
+local Popup = Import("components/Popup")
 
-local Create = Utility.Create
+local Create, Tween = Utility.Create, Utility.Tween
 local WHITE = Color3.new(1, 1, 1)
 
 local RAINBOW = ColorSequence.new({
@@ -1929,6 +2514,59 @@ local RAINBOW = ColorSequence.new({
 	ColorSequenceKeypoint.new(5 / 6, Color3.fromRGB(255, 0, 255)),
 	ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 0, 0)),
 })
+
+local MODES = { "HEX", "RGB", "HSV", "HSL" }
+local SQUARE = 176 -- saturation / value square
+local BAR = 18
+
+--// HSL helpers (HSV comes from Color3) ----------------------------------------
+local function toHSL(color)
+	local r, g, b = color.R, color.G, color.B
+	local max, min = math.max(r, g, b), math.min(r, g, b)
+	local l = (max + min) / 2
+	local h, s = 0, 0
+	if max ~= min then
+		local d = max - min
+		s = l > 0.5 and d / (2 - max - min) or d / (max + min)
+		if max == r then
+			h = (g - b) / d + (g < b and 6 or 0)
+		elseif max == g then
+			h = (b - r) / d + 2
+		else
+			h = (r - g) / d + 4
+		end
+		h = h / 6
+	end
+	return h, s, l
+end
+
+local function fromHSL(h, s, l)
+	if s == 0 then
+		return Color3.new(l, l, l)
+	end
+	local function channel(p, q, t)
+		if t < 0 then
+			t = t + 1
+		elseif t > 1 then
+			t = t - 1
+		end
+		if t < 1 / 6 then
+			return p + (q - p) * 6 * t
+		elseif t < 1 / 2 then
+			return q
+		elseif t < 2 / 3 then
+			return p + (q - p) * (2 / 3 - t) * 6
+		end
+		return p
+	end
+	local q = l < 0.5 and l * (1 + s) or l + s - l * s
+	local p = 2 * l - q
+	return Color3.new(channel(p, q, h + 1 / 3), channel(p, q, h), channel(p, q, h - 1 / 3))
+end
+
+local function round(value)
+	return math.floor(value + 0.5)
+end
 
 local function marker(parent, size)
 	local dot = Create("Frame", {
@@ -1943,18 +2581,19 @@ local function marker(parent, size)
 	return dot
 end
 
--- opts: Title, Desc, Default (Color3), Transparency (number, enables the alpha bar), Callback, Flag
--- Callback(color, transparency)
+-- opts: Title, Desc, Default (Color3), Transparency (0 = opaque), Callback(color, transparency), Flag
+-- The picker opens as a popup: color square, hue slider, opacity slider (0-100), HEX / RGB / HSV / HSL fields.
 return function(container, opts)
 	opts = opts or {}
-	local theme = container.Window.Theme
+	local window = container.Window
+	local theme = window.Theme
 	local el = Base.Card(container, opts, 40, 24)
-	local drawer = Base.Expandable(el)
 
-	local useAlpha = opts.Alpha == true or type(opts.Transparency) == "number"
 	local start = opts.Default or opts.Value or Color3.fromRGB(255, 150, 40)
 	local hue, sat, val = start:ToHSV()
-	local alpha = 1 - (opts.Transparency or 0)
+	local alpha = 1 - (opts.Transparency or 0) -- opacity, 1 = fully visible
+	local mode = "HEX"
+	local ui -- widgets of the open popup, nil while closed
 
 	--// swatch (closed state)
 	local swatch = Create("Frame", {
@@ -1965,89 +2604,54 @@ return function(container, opts)
 	Utility.Corner(swatch, 7)
 	Utility.Stroke(swatch, WHITE, 0.55, 1.5)
 
-	--// saturation / value square
-	local svBox = Create("Frame", {
-		Size = UDim2.new(1, 0, 0, 130),
-		BackgroundColor3 = Color3.fromHSV(hue, 1, 1),
-		LayoutOrder = 1,
-		Parent = drawer.Frame,
-	})
-	Utility.Corner(svBox, 8)
-
-	local whiteLayer = Create("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = WHITE, Parent = svBox })
-	Utility.Corner(whiteLayer, 8)
-	Create("UIGradient", { Transparency = NumberSequence.new(0, 1), Parent = whiteLayer })
-
-	local blackLayer = Create("Frame", {
-		Size = UDim2.fromScale(1, 1),
-		BackgroundColor3 = Color3.new(0, 0, 0),
-		Parent = svBox,
-	})
-	Utility.Corner(blackLayer, 8)
-	Create("UIGradient", { Rotation = 90, Transparency = NumberSequence.new(1, 0), Parent = blackLayer })
-
-	local svMarker = marker(svBox, 14)
-	local svHit = Create("TextButton", { Size = UDim2.fromScale(1, 1), ZIndex = 6, Parent = svBox })
-
-	--// hue bar
-	local hueBar = Create("Frame", {
-		Size = UDim2.new(1, 0, 0, 14),
-		BackgroundColor3 = WHITE,
-		LayoutOrder = 2,
-		Parent = drawer.Frame,
-	})
-	Utility.Corner(hueBar, Utility.Pill)
-	Create("UIGradient", { Color = RAINBOW, Parent = hueBar })
-	local hueMarker = marker(hueBar, 16)
-	hueMarker.Position = UDim2.fromScale(hue, 0.5)
-	local hueHit = Create("TextButton", { Size = UDim2.fromScale(1, 1), ZIndex = 6, Parent = hueBar })
-
-	--// alpha bar (optional)
-	local alphaBar, alphaMarker, alphaHit
-	if useAlpha then
-		alphaBar = Create("Frame", {
-			Size = UDim2.new(1, 0, 0, 14),
-			BackgroundColor3 = start,
-			LayoutOrder = 3,
-			Parent = drawer.Frame,
-		})
-		Utility.Corner(alphaBar, Utility.Pill)
-		Create("UIGradient", { Transparency = NumberSequence.new(0.9, 0), Parent = alphaBar })
-		Utility.Stroke(alphaBar, WHITE, 0.85, 1)
-		alphaMarker = marker(alphaBar, 16)
-		alphaHit = Create("TextButton", { Size = UDim2.fromScale(1, 1), ZIndex = 6, Parent = alphaBar })
-	end
-
-	--// hex input
-	local hexField = Base.Field(theme, drawer.Frame, UDim2.new(1, 0, 0, 28))
-	hexField.LayoutOrder = 4
-	local hexBox = Create("TextBox", {
-		Position = UDim2.fromOffset(10, 0),
-		Size = UDim2.new(1, -20, 1, 0),
-		Font = Enum.Font.GothamBold,
-		TextSize = 12,
-		TextXAlignment = Enum.TextXAlignment.Center,
-		ClearTextOnFocus = false,
-		Parent = hexField,
-	})
-	theme:Bind(hexBox, { TextColor3 = "Text" })
-
-	--// state
 	local function current()
 		return Color3.fromHSV(hue, sat, val)
+	end
+
+	-- keeps the old hue when the new color is gray / black (hue is undefined there)
+	local function setFromColor(color)
+		local h, s, v = color:ToHSV()
+		if s > 0 and v > 0 then
+			hue = h
+		end
+		sat, val = s, v
+	end
+
+	local function renderFields()
+		if not ui then
+			return
+		end
+		local color = current()
+		local values
+		if mode == "HEX" then
+			values = { "#" .. Utility.ToHex(color) }
+		elseif mode == "RGB" then
+			values = { round(color.R * 255), round(color.G * 255), round(color.B * 255) }
+		elseif mode == "HSV" then
+			values = { round(hue * 360), round(sat * 100), round(val * 100) }
+		else
+			local h, s, l = toHSL(color)
+			values = { round((s > 0 and l > 0 and l < 1) and h * 360 or hue * 360), round(s * 100), round(l * 100) }
+		end
+		for index, box in ipairs(ui.Boxes) do
+			box.Text = tostring(values[index])
+		end
+		ui.Alpha.Text = round(alpha * 100) .. "%"
 	end
 
 	local function render()
 		local color = current()
 		swatch.BackgroundColor3 = color
-		swatch.BackgroundTransparency = useAlpha and (1 - alpha) * 0.85 or 0
-		svBox.BackgroundColor3 = Color3.fromHSV(hue, 1, 1)
-		svMarker.Position = UDim2.fromScale(sat, 1 - val)
-		hueMarker.Position = UDim2.fromScale(hue, 0.5)
-		hexBox.Text = "#" .. Utility.ToHex(color)
-		if alphaBar then
-			alphaBar.BackgroundColor3 = color
-			alphaMarker.Position = UDim2.fromScale(alpha, 0.5)
+		swatch.BackgroundTransparency = (1 - alpha) * 0.85
+		if ui then
+			ui.Square.BackgroundColor3 = Color3.fromHSV(hue, 1, 1)
+			ui.SquareMarker.Position = UDim2.fromScale(sat, 1 - val)
+			ui.HueMarker.Position = UDim2.fromScale(0.5, hue)
+			ui.AlphaBar.BackgroundColor3 = color
+			ui.AlphaMarker.Position = UDim2.fromScale(0.5, 1 - alpha)
+			ui.Preview.BackgroundColor3 = color
+			ui.Preview.BackgroundTransparency = 1 - alpha
+			renderFields()
 		end
 	end
 
@@ -2056,6 +2660,7 @@ return function(container, opts)
 	end
 
 	local function commit()
+		el.Value = current()
 		render()
 		fire()
 	end
@@ -2063,6 +2668,7 @@ return function(container, opts)
 	el.Value = current()
 	render()
 
+	--// public api
 	function el:Set(value, silent)
 		local color, transparency = value, nil
 		if typeof(value) == "table" then
@@ -2074,11 +2680,11 @@ return function(container, opts)
 		if typeof(color) ~= "Color3" then
 			return
 		end
-		hue, sat, val = color:ToHSV()
+		setFromColor(color)
 		if transparency then
 			alpha = 1 - transparency
 		end
-		self.Value = color
+		self.Value = current()
 		render()
 		if not silent then
 			fire()
@@ -2100,60 +2706,287 @@ return function(container, opts)
 		el:Set(value)
 	end
 
-	--// interaction
-	local page = container.Page
-	local function lockScroll()
-		if page then
-			page.ScrollingEnabled = false
-		end
-	end
-	local function unlockScroll()
-		if page then
-			page.ScrollingEnabled = true
-		end
-	end
-
-	local function ratio(frame, position, axis)
-		local origin = axis == "X" and frame.AbsolutePosition.X or frame.AbsolutePosition.Y
-		local length = axis == "X" and frame.AbsoluteSize.X or frame.AbsoluteSize.Y
-		local point = axis == "X" and position.X or position.Y
-		return Utility.Clamp((point - origin) / math.max(length, 1), 0, 1)
-	end
-
-	Utility.DragInput(svHit, el.Maid, lockScroll, function(position)
-		sat = ratio(svBox, position, "X")
-		val = 1 - ratio(svBox, position, "Y")
-		el.Value = current()
-		commit()
-	end, unlockScroll)
-
-	Utility.DragInput(hueHit, el.Maid, lockScroll, function(position)
-		hue = ratio(hueBar, position, "X")
-		el.Value = current()
-		commit()
-	end, unlockScroll)
-
-	if alphaHit then
-		Utility.DragInput(alphaHit, el.Maid, lockScroll, function(position)
-			alpha = ratio(alphaBar, position, "X")
-			commit()
-		end, unlockScroll)
-	end
-
-	el.Maid:Give(hexBox.FocusLost:Connect(function()
-		local color = Utility.FromHex(hexBox.Text)
-		if color then
-			el:Set(color)
+	--// popup ----------------------------------------------------------------------
+	local function applyField(index, text)
+		local number = tonumber(string.match(text, "-?%d+%.?%d*"))
+		if mode == "HEX" then
+			local color = Utility.FromHex(text)
+			if color then
+				setFromColor(color)
+			end
+		elseif not number then
+			return
+		elseif mode == "RGB" then
+			local channels = {
+				round(current().R * 255),
+				round(current().G * 255),
+				round(current().B * 255),
+			}
+			channels[index] = Utility.Clamp(round(number), 0, 255)
+			setFromColor(Color3.fromRGB(channels[1], channels[2], channels[3]))
+		elseif mode == "HSV" then
+			if index == 1 then
+				hue = Utility.Clamp(number, 0, 360) / 360
+			elseif index == 2 then
+				sat = Utility.Clamp(number, 0, 100) / 100
+			else
+				val = Utility.Clamp(number, 0, 100) / 100
+			end
 		else
-			render()
+			local h, s, l = toHSL(current())
+			if index == 1 then
+				h = Utility.Clamp(number, 0, 360) / 360
+			elseif index == 2 then
+				s = Utility.Clamp(number, 0, 100) / 100
+			else
+				l = Utility.Clamp(number, 0, 100) / 100
+			end
+			setFromColor(fromHSL(h, s, l))
+			if s > 0 and l > 0 and l < 1 then
+				hue = h
+			end
 		end
-	end))
+		commit()
+	end
+
+	local function buildFields(row, popMaid)
+		for _, child in ipairs(row:GetChildren()) do
+			if child:IsA("GuiObject") then
+				child:Destroy()
+			end
+		end
+		ui.Boxes = {}
+
+		local count = mode == "HEX" and 1 or 3
+		local alphaWidth = 58
+		local fieldWidth = math.floor((236 - alphaWidth - 6 * count) / count)
+
+		for index = 1, count do
+			local field = Base.Field(theme, row, UDim2.fromOffset(fieldWidth, 28))
+			field.LayoutOrder = index
+			local box = Create("TextBox", {
+				Size = UDim2.fromScale(1, 1),
+				Font = Enum.Font.GothamBold,
+				TextSize = 12,
+				TextXAlignment = Enum.TextXAlignment.Center,
+				ClearTextOnFocus = false,
+				Parent = field,
+			})
+			theme:Bind(box, { TextColor3 = "Text" })
+			popMaid:Give(box.FocusLost:Connect(function()
+				applyField(index, box.Text)
+			end))
+			ui.Boxes[index] = box
+		end
+
+		local alphaField = Base.Field(theme, row, UDim2.fromOffset(alphaWidth, 28))
+		alphaField.LayoutOrder = 10
+		local alphaBox = Create("TextBox", {
+			Size = UDim2.fromScale(1, 1),
+			Font = Enum.Font.GothamBold,
+			TextSize = 12,
+			TextXAlignment = Enum.TextXAlignment.Center,
+			ClearTextOnFocus = false,
+			Parent = alphaField,
+		})
+		theme:Bind(alphaBox, { TextColor3 = "Text" })
+		popMaid:Give(alphaBox.FocusLost:Connect(function()
+			local number = tonumber(string.match(alphaBox.Text, "-?%d+%.?%d*"))
+			if number then
+				alpha = Utility.Clamp(number, 0, 100) / 100
+				commit()
+			else
+				render()
+			end
+		end))
+		ui.Alpha = alphaBox
+		renderFields()
+	end
+
+	local function open()
+		local popMaid = Utility.Maid.new()
+		local popup = Popup(window, {
+			Width = 264,
+			OnClose = function()
+				popMaid:Clean()
+				ui = nil
+				el._ui = nil
+			end,
+		})
+		local card = popup.Card
+		ui = {}
+		el._ui = ui
+		el.Popup = popup
+
+		--// header
+		local header = Create("Frame", { Size = UDim2.new(1, 0, 0, 22), BackgroundTransparency = 1, LayoutOrder = 1, Parent = card })
+		local title = Create("TextLabel", {
+			Size = UDim2.new(1, -60, 1, 0),
+			Text = opts.Title or "Color",
+			Font = Enum.Font.GothamBold,
+			TextSize = 14,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			Parent = header,
+		})
+		Base.Gradient(theme, title, 0)
+
+		ui.Preview = Create("Frame", {
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, -30, 0.5, 0),
+			Size = UDim2.fromOffset(32, 16),
+			BackgroundColor3 = current(),
+			Parent = header,
+		})
+		Utility.Corner(ui.Preview, 5)
+		Utility.Stroke(ui.Preview, WHITE, 0.6, 1)
+
+		local closeButton = Create("TextButton", {
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.fromScale(1, 0.5),
+			Size = UDim2.fromOffset(22, 22),
+			Parent = header,
+		})
+		local closeGlyph = Icons.Close(closeButton, 12, 2)
+		Icons.Bind(theme, closeGlyph, "SubText")
+		popMaid:Give(closeButton.MouseButton1Click:Connect(function()
+			popup:Close()
+		end))
+
+		--// square + sliders
+		local area = Create("Frame", { Size = UDim2.new(1, 0, 0, SQUARE), BackgroundTransparency = 1, LayoutOrder = 2, Parent = card })
+
+		ui.Square = Create("Frame", {
+			Size = UDim2.fromOffset(SQUARE, SQUARE),
+			BackgroundColor3 = Color3.fromHSV(hue, 1, 1),
+			Parent = area,
+		})
+		Utility.Corner(ui.Square, 8)
+		local whiteLayer = Create("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = WHITE, Parent = ui.Square })
+		Utility.Corner(whiteLayer, 8)
+		Create("UIGradient", { Transparency = NumberSequence.new(0, 1), Parent = whiteLayer })
+		local blackLayer = Create("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0), Parent = ui.Square })
+		Utility.Corner(blackLayer, 8)
+		Create("UIGradient", { Rotation = 90, Transparency = NumberSequence.new(1, 0), Parent = blackLayer })
+		ui.SquareMarker = marker(ui.Square, 14)
+		local squareHit = Create("TextButton", { Size = UDim2.fromScale(1, 1), ZIndex = 6, Parent = ui.Square })
+
+		local hueBar = Create("Frame", {
+			Position = UDim2.fromOffset(SQUARE + 10, 0),
+			Size = UDim2.fromOffset(BAR, SQUARE),
+			BackgroundColor3 = WHITE,
+			Parent = area,
+		})
+		Utility.Corner(hueBar, Utility.Pill)
+		Create("UIGradient", { Rotation = 90, Color = RAINBOW, Parent = hueBar })
+		ui.HueMarker = marker(hueBar, 16)
+		local hueHit = Create("TextButton", { Size = UDim2.fromScale(1, 1), ZIndex = 6, Parent = hueBar })
+
+		ui.AlphaBar = Create("Frame", {
+			Position = UDim2.fromOffset(SQUARE + 10 + BAR + 8, 0),
+			Size = UDim2.fromOffset(BAR, SQUARE),
+			BackgroundColor3 = current(),
+			Parent = area,
+		})
+		Utility.Corner(ui.AlphaBar, Utility.Pill)
+		Create("UIGradient", { Rotation = 90, Transparency = NumberSequence.new(0, 0.95), Parent = ui.AlphaBar })
+		Utility.Stroke(ui.AlphaBar, WHITE, 0.85, 1)
+		ui.AlphaMarker = marker(ui.AlphaBar, 16)
+		local alphaHit = Create("TextButton", { Size = UDim2.fromScale(1, 1), ZIndex = 6, Parent = ui.AlphaBar })
+
+		local function ratio(frame, position, axis)
+			local origin = axis == "X" and frame.AbsolutePosition.X or frame.AbsolutePosition.Y
+			local length = axis == "X" and frame.AbsoluteSize.X or frame.AbsoluteSize.Y
+			local point = axis == "X" and position.X or position.Y
+			return Utility.Clamp((point - origin) / math.max(length, 1), 0, 1)
+		end
+
+		Utility.DragInput(squareHit, popMaid, nil, function(position)
+			sat = ratio(ui.Square, position, "X")
+			val = 1 - ratio(ui.Square, position, "Y")
+			commit()
+		end)
+		Utility.DragInput(hueHit, popMaid, nil, function(position)
+			hue = ratio(hueBar, position, "Y")
+			commit()
+		end)
+		Utility.DragInput(alphaHit, popMaid, nil, function(position)
+			alpha = 1 - ratio(ui.AlphaBar, position, "Y")
+			commit()
+		end)
+
+		--// mode tabs
+		local tabs = Create("Frame", { Size = UDim2.new(1, 0, 0, 26), BackgroundTransparency = 1, LayoutOrder = 3, Parent = card })
+		Utility.List(tabs, 4, Enum.FillDirection.Horizontal)
+		local row
+		local tabButtons = {}
+
+		local function paintTabs()
+			for name, button in pairs(tabButtons) do
+				local selected = name == mode
+				Tween(button.Background, { BackgroundTransparency = selected and 0.78 or 1 }, 0.2)
+				button.Label.TextColor3 = selected and theme.Tokens.Text or theme.Tokens.SubText
+			end
+		end
+
+		for index, name in ipairs(MODES) do
+			local button = Create("TextButton", {
+				Size = UDim2.new(1 / #MODES, -3, 1, 0),
+				LayoutOrder = index,
+				Parent = tabs,
+			})
+			local background = Create("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = WHITE, BackgroundTransparency = 1, Parent = button })
+			Utility.Corner(background, 7)
+			Base.Gradient(theme, background, 0)
+			local label = Create("TextLabel", {
+				Size = UDim2.fromScale(1, 1),
+				Text = name,
+				Font = Enum.Font.GothamBold,
+				TextSize = 11,
+				TextXAlignment = Enum.TextXAlignment.Center,
+				Parent = button,
+			})
+			tabButtons[name] = { Background = background, Label = label }
+			popMaid:Give(button.MouseButton1Click:Connect(function()
+				ui.SetMode(name)
+			end))
+		end
+
+		ui.SetMode = function(name)
+			mode = name
+			paintTabs()
+			buildFields(row, popMaid)
+		end
+
+		--// fields
+		row = Create("Frame", { Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1, LayoutOrder = 4, Parent = card })
+		Utility.List(row, 6, Enum.FillDirection.Horizontal)
+
+		paintTabs()
+		buildFields(row, popMaid)
+		render()
+	end
+
+	function el:Open()
+		if not ui then
+			open()
+		end
+	end
+
+	function el:Close()
+		if el.Popup and not el.Popup.Closed then
+			el.Popup:Close()
+		end
+	end
 
 	el.Maid:Give(el.Top.MouseButton1Click:Connect(function()
 		if not el.Locked then
-			drawer:Toggle()
+			el:Open()
 		end
 	end))
+
+	el.Maid:Give(function()
+		el:Close()
+	end)
 
 	return Base.Finish(container, el, opts, "Colorpicker")
 end
@@ -2733,11 +3566,12 @@ return function(container, opts)
 	el.Value = Utility.Clamp(range.Default or opts.Default or min, min, max)
 	render(el.Value, true)
 
-	function el:Set(value, silent)
+	-- `instant` is used while dragging: restarting a tween every frame makes the knob lag
+	function el:Set(value, silent, instant)
 		value = Utility.Clamp(Utility.Snap(value, min, step), min, max)
 		local changed = value ~= self.Value
 		self.Value = value
-		render(value, false)
+		render(value, instant == true)
 		if changed and not silent then
 			Utility.SafeCall(opts.Callback, value)
 		end
@@ -2768,7 +3602,7 @@ return function(container, opts)
 		end
 	end, function(position)
 		local alpha = Utility.Clamp((position.X - rail.AbsolutePosition.X) / math.max(rail.AbsoluteSize.X, 1), 0, 1)
-		el:Set(min + (max - min) * alpha)
+		el:Set(min + (max - min) * alpha, false, true)
 	end, function()
 		if page then
 			page.ScrollingEnabled = true
@@ -3102,6 +3936,53 @@ function Compat.DeleteFile(path)
 	return false
 end
 
+--// Images --------------------------------------------------------------------
+local function hashText(text)
+	local hash = 5381
+	for index = 1, #text do
+		hash = (hash * 33 + string.byte(text, index)) % 4294967296
+	end
+	return string.format("%08x", hash)
+end
+
+-- Turns an asset id / "rbxassetid://..." / http(s) URL into something an ImageLabel accepts.
+-- URLs are downloaded once into <folder>/cache and served through getcustomasset
+-- (needs request + writefile + getcustomasset). May yield, so call it from a task.
+function Compat.ResolveImage(source, folder)
+	if type(source) == "number" then
+		return "rbxassetid://" .. source
+	end
+	if type(source) ~= "string" or source == "" then
+		return nil
+	end
+	if string.find(source, "^rbxasset") then
+		return source
+	end
+	if tonumber(source) then
+		return "rbxassetid://" .. source
+	end
+	if string.find(source, "^https?://") then
+		local requester = request or http_request or (syn and syn.request)
+		local assetOf = getcustomasset or getsynasset
+		if not (requester and assetOf and Compat.FilesSupported) then
+			return nil
+		end
+		local path = (folder or "MugiwaraUI") .. "/cache/" .. hashText(source) .. ".png"
+		if not Compat.FileExists(path) then
+			local response = try(requester, { Url = source, Method = "GET" })
+			if not (response and response.Body and (response.StatusCode == nil or response.StatusCode == 200)) then
+				return nil
+			end
+			Compat.EnsureFolder((folder or "MugiwaraUI") .. "/cache")
+			if not Compat.WriteFile(path, response.Body) then
+				return nil
+			end
+		end
+		return try(assetOf, path)
+	end
+	return nil
+end
+
 --// Clipboard -----------------------------------------------------------------
 function Compat.SetClipboard(text)
 	local setter = setclipboard or toclipboard or (Clipboard and Clipboard.set)
@@ -3349,21 +4230,75 @@ function Icons.Minus(parent, size, thickness)
 	return root
 end
 
--- Binds every bar of a drawn glyph to a theme color token.
-function Icons.Bind(theme, glyph, token)
+-- Outlined square (maximize).
+function Icons.Square(parent, size, thickness)
+	local root = holder(parent, "Square", size)
+	local box = Create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(size * 0.62, size * 0.62),
+		BackgroundTransparency = 1,
+		Parent = root,
+	})
+	Utility.Corner(box, 3)
+	Utility.Stroke(box, Color3.new(1, 1, 1), 0, thickness or 2)
+	return root
+end
+
+-- Two overlapping squares (restore from maximized).
+function Icons.Restore(parent, size, thickness)
+	local root = holder(parent, "Restore", size)
+	local th = thickness or 2
+	local front = Create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.4, 0.6),
+		Size = UDim2.fromOffset(size * 0.5, size * 0.5),
+		BackgroundTransparency = 1,
+		Parent = root,
+	})
+	Utility.Corner(front, 3)
+	Utility.Stroke(front, Color3.new(1, 1, 1), 0, th)
+	bar(root, size * 0.4, th, 0, 0.66, 0.16)
+	bar(root, size * 0.38, th, 90, 0.86, 0.34)
+	return root
+end
+
+-- Glyph parts are either filled bars or stroked outlines; recolor whichever applies.
+local function eachPart(glyph, apply)
 	for _, child in ipairs(glyph:GetChildren()) do
 		if child:IsA("Frame") then
-			theme:Bind(child, { BackgroundColor3 = token })
+			local stroke = child:FindFirstChildOfClass("UIStroke")
+			apply(child, stroke)
 		end
 	end
+end
+
+-- Binds every part of a drawn glyph to a theme color token.
+function Icons.Bind(theme, glyph, token)
+	eachPart(glyph, function(part, stroke)
+		if stroke then
+			theme:Bind(stroke, { Color = token })
+		else
+			theme:Bind(part, { BackgroundColor3 = token })
+		end
+	end)
 	return glyph
 end
 
 function Icons.SetColor(glyph, color)
-	for _, child in ipairs(glyph:GetChildren()) do
-		if child:IsA("Frame") then
-			child.BackgroundColor3 = color
+	eachPart(glyph, function(part, stroke)
+		if stroke then
+			stroke.Color = color
+		else
+			part.BackgroundColor3 = color
 		end
+	end)
+end
+
+-- Empties a glyph holder so another shape can be drawn into the same slot.
+function Icons.Clear(glyph)
+	for _, child in ipairs(glyph:GetChildren()) do
+		child:Destroy()
 	end
 end
 
@@ -3373,6 +4308,8 @@ end
 __modules["core/Theme"] = function(Import)
 --// Theme: design tokens + live re-theming. Every themed instance is registered
 --// through Theme:Bind(instance, { Property = "Token" | function(tokens) }).
+
+local RunService = game:GetService("RunService")
 
 local Utility = Import("core/Utility")
 
@@ -3482,7 +4419,23 @@ function Theme.new(name)
 	return self
 end
 
-function Theme:_apply(binding, animate)
+local FADE_TIME = 0.4
+
+local function canBlend(from, to)
+	return from ~= nil and from.Keypoints ~= nil and to.Keypoints ~= nil and #from.Keypoints == #to.Keypoints
+end
+
+local function blend(from, to, alpha)
+	local a, b = from.Keypoints, to.Keypoints
+	local points = table.create(#b)
+	for index = 1, #b do
+		points[index] = ColorSequenceKeypoint.new(b[index].Time, a[index].Value:Lerp(b[index].Value, alpha))
+	end
+	return ColorSequence.new(points)
+end
+
+-- `jobs` collects gradient swaps so they can cross-fade instead of snapping.
+function Theme:_apply(binding, animate, jobs)
 	local inst = binding.Instance
 	local tweenable = {}
 	for property, source in pairs(binding.Map) do
@@ -3496,14 +4449,42 @@ function Theme:_apply(binding, animate)
 			local kind = typeof(value)
 			if animate and (kind == "Color3" or kind == "number") then
 				tweenable[property] = value
+			elseif animate and jobs and kind == "ColorSequence" and canBlend(inst[property], value) then
+				table.insert(jobs, { Instance = inst, Property = property, From = inst[property], To = value })
 			else
 				inst[property] = value
 			end
 		end
 	end
 	if next(tweenable) then
-		Utility.Tween(inst, tweenable, 0.35, Enum.EasingStyle.Quad)
+		Utility.Tween(inst, tweenable, FADE_TIME, Enum.EasingStyle.Quad)
 	end
+end
+
+function Theme:_blendSequences(jobs)
+	if self._blendConnection then
+		self._blendConnection:Disconnect()
+		self._blendConnection = nil
+	end
+	if #jobs == 0 then
+		return
+	end
+	local started = os.clock()
+	local connection
+	connection = RunService.Heartbeat:Connect(function()
+		local progress = math.min((os.clock() - started) / FADE_TIME, 1)
+		local eased = 1 - (1 - progress) ^ 3
+		for _, job in ipairs(jobs) do
+			job.Instance[job.Property] = progress >= 1 and job.To or blend(job.From, job.To, eased)
+		end
+		if progress >= 1 then
+			connection:Disconnect()
+			if self._blendConnection == connection then
+				self._blendConnection = nil
+			end
+		end
+	end)
+	self._blendConnection = connection
 end
 
 function Theme:Bind(inst, map)
@@ -3522,9 +4503,11 @@ function Theme:Set(name)
 	end
 	self.Name = name
 	self.Tokens = resolve(name)
+	local jobs = {}
 	for binding in pairs(self.Bindings) do
-		self:_apply(binding, true)
+		self:_apply(binding, true, jobs)
 	end
+	self:_blendSequences(jobs)
 	for listener in pairs(self.Listeners) do
 		task.spawn(listener, self.Tokens, name)
 	end
@@ -3541,6 +4524,11 @@ end
 
 function Theme:Add(name, overrides)
 	Theme.Presets[name] = overrides
+end
+
+-- Tokens of any theme without applying it (theme menu previews).
+function Theme.Preview(name)
+	return resolve(name)
 end
 
 function Theme:List()
@@ -3807,13 +4795,16 @@ function Utility.DragInput(object, maid, onBegin, onUpdate, onEnd)
 end
 
 -- Moves `target` when `handle` is dragged. Fires onClick when released without moving.
-function Utility.Draggable(handle, target, maid, getScale, onClick)
+function Utility.Draggable(handle, target, maid, getScale, onClick, enabled)
 	local dragging = false
 	local moved = false
 	local startPointer, startPosition
 
 	maid:Give(handle.InputBegan:Connect(function(input)
 		if not Utility.IsPress(input) then
+			return
+		end
+		if enabled and not enabled() then
 			return
 		end
 		dragging = true
@@ -3873,7 +4864,7 @@ if env.MugiwaraUI and type(env.MugiwaraUI.Destroy) == "function" then
 end
 
 local Library = {
-	Version = "0.1.0",
+	Version = "0.2.0",
 	Windows = {},
 	Theme = Theme.new("Gear5"),
 	Icons = Icons,

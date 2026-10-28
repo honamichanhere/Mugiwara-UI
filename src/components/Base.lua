@@ -2,6 +2,7 @@
 --// expandable drawer, flag registration).
 
 local Utility = Import("core/Utility")
+local Compat = Import("core/Compat")
 
 local Create, Tween = Utility.Create, Utility.Tween
 local WHITE = Color3.new(1, 1, 1)
@@ -98,6 +99,36 @@ function Base.Card(container, opts, rightWidth, rightHeight)
 	local stroke = Utility.Stroke(frame, WHITE, 0.9, 1)
 	theme:Bind(frame, { BackgroundColor3 = "Card", BackgroundTransparency = "CardAlpha" })
 	theme:Bind(stroke, { Color = "Stroke", Transparency = "StrokeAlpha" })
+
+	-- Optional card background image (opts.Image = asset id / rbxassetid / http URL).
+	-- It fades in from the right so the title on the left stays readable.
+	if opts.Image then
+		local image = Create("ImageLabel", {
+			Name = "Image",
+			Size = UDim2.fromScale(1, 1),
+			ScaleType = Enum.ScaleType.Crop,
+			ImageTransparency = 1,
+			Visible = false,
+			Parent = frame,
+		})
+		Utility.Corner(image, 10)
+		Create("UIGradient", {
+			Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 1),
+				NumberSequenceKeypoint.new(0.4, 0.75),
+				NumberSequenceKeypoint.new(1, 0.05),
+			}),
+			Parent = image,
+		})
+		task.spawn(function()
+			local asset = Compat.ResolveImage(opts.Image, window.Folder)
+			if asset and image.Parent then
+				image.Image = asset
+				image.Visible = true
+				Tween(image, { ImageTransparency = opts.ImageTransparency or 0.25 }, 0.6)
+			end
+		end)
+	end
 
 	local content = Create("Frame", {
 		Name = "Content",

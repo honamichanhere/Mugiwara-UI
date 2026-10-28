@@ -83,11 +83,12 @@ return function(container, opts)
 	el.Value = Utility.Clamp(range.Default or opts.Default or min, min, max)
 	render(el.Value, true)
 
-	function el:Set(value, silent)
+	-- `instant` is used while dragging: restarting a tween every frame makes the knob lag
+	function el:Set(value, silent, instant)
 		value = Utility.Clamp(Utility.Snap(value, min, step), min, max)
 		local changed = value ~= self.Value
 		self.Value = value
-		render(value, false)
+		render(value, instant == true)
 		if changed and not silent then
 			Utility.SafeCall(opts.Callback, value)
 		end
@@ -118,7 +119,7 @@ return function(container, opts)
 		end
 	end, function(position)
 		local alpha = Utility.Clamp((position.X - rail.AbsolutePosition.X) / math.max(rail.AbsoluteSize.X, 1), 0, 1)
-		el:Set(min + (max - min) * alpha)
+		el:Set(min + (max - min) * alpha, false, true)
 	end, function()
 		if page then
 			page.ScrollingEnabled = true

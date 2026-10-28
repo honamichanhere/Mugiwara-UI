@@ -18,11 +18,15 @@ local Create, Tween = Utility.Create, Utility.Tween
 local Container = {}
 Container.__index = Container
 
-function Container.new(window, holder, page)
+-- tab -> section -> section is the deepest allowed layout ("double section")
+Container.MaxSectionDepth = 2
+
+function Container.new(window, holder, page, depth)
 	return setmetatable({
 		Window = window,
 		Holder = holder,
 		Page = page,
+		Depth = depth or 0, -- how many sections deep this container is
 		Elements = {},
 		_order = 0,
 	}, Container)
@@ -77,6 +81,9 @@ end
 -- Collapsible group. Returns another Container, so sections can hold any element.
 function Container:Section(opts)
 	opts = opts or {}
+	if self.Depth >= Container.MaxSectionDepth then
+		error("MugiwaraUI: sections can only be nested " .. Container.MaxSectionDepth .. " levels deep (section > section)", 2)
+	end
 	local window = self.Window
 	local theme = window.Theme
 
@@ -145,7 +152,7 @@ function Container:Section(opts)
 	Utility.Padding(bodyInner, 2, 12, 10, 10)
 	Utility.List(bodyInner, 8)
 
-	local section = Container.new(window, bodyInner, self.Page)
+	local section = Container.new(window, bodyInner, self.Page, self.Depth + 1)
 	section.Frame = wrap
 	section.Open = opts.Opened ~= false
 

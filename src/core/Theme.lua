@@ -1,6 +1,8 @@
 --// Theme: design tokens + live re-theming. Every themed instance is registered
 --// through Theme:Bind(instance, { Property = "Token" | function(tokens) }).
 
+local RunService = game:GetService("RunService")
+
 local Utility = Import("core/Utility")
 
 local Theme = {}
@@ -109,7 +111,23 @@ function Theme.new(name)
 	return self
 end
 
-function Theme:_apply(binding, animate)
+local FADE_TIME = 0.4
+
+local function canBlend(from, to)
+	return from ~= nil and from.Keypoints ~= nil and to.Keypoints ~= nil and #from.Keypoints == #to.Keypoints
+end
+
+local function blend(from, to, alpha)
+	local a, b = from.Keypoints, to.Keypoints
+	local points = table.create(#b)
+	for index = 1, #b do
+		points[index] = ColorSequenceKeypoint.new(b[index].Time, a[index].Value:Lerp(b[index].Value, alpha))
+	end
+	return ColorSequence.new(points)
+end
+
+-- `jobs` collects gradient swaps so they can cross-fade instead of snapping.
+function Theme:_apply(binding, animate, jobs)
 	local inst = binding.Instance
 	local tweenable = {}
 	for property, source in pairs(binding.Map) do
@@ -123,14 +141,42 @@ function Theme:_apply(binding, animate)
 			local kind = typeof(value)
 			if animate and (kind == "Color3" or kind == "number") then
 				tweenable[property] = value
+			elseif animate and jobs and kind == "ColorSequence" and canBlend(inst[property], value) then
+				table.insert(jobs, { Instance = inst, Property = property, From = inst[property], To = value })
 			else
 				inst[property] = value
 			end
 		end
 	end
 	if next(tweenable) then
-		Utility.Tween(inst, tweenable, 0.35, Enum.EasingStyle.Quad)
+		Utility.Tween(inst, tweenable, FADE_TIME, Enum.EasingStyle.Quad)
 	end
+end
+
+function Theme:_blendSequences(jobs)
+	if self._blendConnection then
+		self._blendConnection:Disconnect()
+		self._blendConnection = nil
+	end
+	if #jobs == 0 then
+		return
+	end
+	local started = os.clock()
+	local connection
+	connection = RunService.Heartbeat:Connect(function()
+		local progress = math.min((os.clock() - started) / FADE_TIME, 1)
+		local eased = 1 - (1 - progress) ^ 3
+		for _, job in ipairs(jobs) do
+			job.Instance[job.Property] = progress >= 1 and job.To or blend(job.From, job.To, eased)
+		end
+		if progress >= 1 then
+			connection:Disconnect()
+			if self._blendConnection == connection then
+				self._blendConnection = nil
+			end
+		end
+	end)
+	self._blendConnection = connection
 end
 
 function Theme:Bind(inst, map)
@@ -149,9 +195,11 @@ function Theme:Set(name)
 	end
 	self.Name = name
 	self.Tokens = resolve(name)
+	local jobs = {}
 	for binding in pairs(self.Bindings) do
-		self:_apply(binding, true)
+		self:_apply(binding, true, jobs)
 	end
+	self:_blendSequences(jobs)
 	for listener in pairs(self.Listeners) do
 		task.spawn(listener, self.Tokens, name)
 	end
@@ -168,6 +216,11 @@ end
 
 function Theme:Add(name, overrides)
 	Theme.Presets[name] = overrides
+end
+
+-- Tokens of any theme without applying it (theme menu previews).
+function Theme.Preview(name)
+	return resolve(name)
 end
 
 function Theme:List()

@@ -99,21 +99,75 @@ function Icons.Minus(parent, size, thickness)
 	return root
 end
 
--- Binds every bar of a drawn glyph to a theme color token.
-function Icons.Bind(theme, glyph, token)
+-- Outlined square (maximize).
+function Icons.Square(parent, size, thickness)
+	local root = holder(parent, "Square", size)
+	local box = Create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(size * 0.62, size * 0.62),
+		BackgroundTransparency = 1,
+		Parent = root,
+	})
+	Utility.Corner(box, 3)
+	Utility.Stroke(box, Color3.new(1, 1, 1), 0, thickness or 2)
+	return root
+end
+
+-- Two overlapping squares (restore from maximized).
+function Icons.Restore(parent, size, thickness)
+	local root = holder(parent, "Restore", size)
+	local th = thickness or 2
+	local front = Create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.4, 0.6),
+		Size = UDim2.fromOffset(size * 0.5, size * 0.5),
+		BackgroundTransparency = 1,
+		Parent = root,
+	})
+	Utility.Corner(front, 3)
+	Utility.Stroke(front, Color3.new(1, 1, 1), 0, th)
+	bar(root, size * 0.4, th, 0, 0.66, 0.16)
+	bar(root, size * 0.38, th, 90, 0.86, 0.34)
+	return root
+end
+
+-- Glyph parts are either filled bars or stroked outlines; recolor whichever applies.
+local function eachPart(glyph, apply)
 	for _, child in ipairs(glyph:GetChildren()) do
 		if child:IsA("Frame") then
-			theme:Bind(child, { BackgroundColor3 = token })
+			local stroke = child:FindFirstChildOfClass("UIStroke")
+			apply(child, stroke)
 		end
 	end
+end
+
+-- Binds every part of a drawn glyph to a theme color token.
+function Icons.Bind(theme, glyph, token)
+	eachPart(glyph, function(part, stroke)
+		if stroke then
+			theme:Bind(stroke, { Color = token })
+		else
+			theme:Bind(part, { BackgroundColor3 = token })
+		end
+	end)
 	return glyph
 end
 
 function Icons.SetColor(glyph, color)
-	for _, child in ipairs(glyph:GetChildren()) do
-		if child:IsA("Frame") then
-			child.BackgroundColor3 = color
+	eachPart(glyph, function(part, stroke)
+		if stroke then
+			stroke.Color = color
+		else
+			part.BackgroundColor3 = color
 		end
+	end)
+end
+
+-- Empties a glyph holder so another shape can be drawn into the same slot.
+function Icons.Clear(glyph)
+	for _, child in ipairs(glyph:GetChildren()) do
+		child:Destroy()
 	end
 end
 

@@ -9,7 +9,10 @@ return function(container, opts)
 	local theme = container.Window.Theme
 	local el = Base.Card(container, opts, 34, 26)
 
+	-- centered anchor: the press animation shrinks toward the middle, not the top-left
 	local pill = Create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
 		Size = UDim2.fromScale(1, 1),
 		BackgroundColor3 = Color3.new(1, 1, 1),
 		Parent = el.Right,
@@ -22,10 +25,10 @@ return function(container, opts)
 	Icons.Bind(theme, arrow, "OnAccent")
 
 	function el:Fire()
-		Tween(pill, { Size = UDim2.new(1, -4, 1, -4) }, 0.08)
-		task.delay(0.1, function()
+		Tween(pill, { Size = UDim2.new(1, -6, 1, -6) }, 0.08)
+		task.delay(0.09, function()
 			if pill.Parent then
-				Tween(pill, { Size = UDim2.fromScale(1, 1) }, 0.25, Enum.EasingStyle.Back)
+				Tween(pill, { Size = UDim2.fromScale(1, 1) }, 0.35, Enum.EasingStyle.Back)
 			end
 		end)
 		Utility.SafeCall(opts.Callback)
