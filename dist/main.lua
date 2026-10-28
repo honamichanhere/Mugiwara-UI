@@ -1,4 +1,4 @@
--- Mugiwara UI v0.6.0
+-- Mugiwara UI v0.6.1
 -- Glass + neon Gear 5 UI library for Roblox script hubs.
 -- https://github.com/honamichanhere/Mugiwara-UI  |  MIT License
 
@@ -4480,7 +4480,8 @@ end
 --       History (messages per page, 50), PollInterval (3 s while chatting), IdlePollInterval (8 s),
 --       BackgroundPoll (seconds; keep polling this slowly while the chat is NOT on screen, so OnMessage can
 --       notify. Default: stop polling when hidden, which saves free-tier requests),
---       Placeholder, OnMessage(message) (new messages from other people)
+--       Placeholder, OnMessage(message) (new messages from other people; called one at a time,
+--       NotifySpacing seconds apart (0.8), and only for the newest NotifyLimit (5) of a burst)
 -- Methods: Send(text), Refresh(), Clear(), Mute(userId), Unmute(userId), GetMuted(), GetMessages()
 return function(container, opts)
 	opts = opts or {}
@@ -4497,6 +4498,8 @@ return function(container, opts)
 	local fastPoll = opts.PollInterval or 3
 	local slowPoll = opts.IdlePollInterval or 8
 	local pageSize = opts.History or 50
+	local notifySpacing = opts.NotifySpacing or 0.8
+	local notifyLimit = opts.NotifyLimit or 5
 	local me = transport.User or { UserId = 0, Name = "player", DisplayName = "Player" }
 
 	local cardOpts = table.clone(opts)
@@ -4986,6 +4989,34 @@ return function(container, opts)
 		end
 	end
 
+	-- New messages arrive in batches (everything since the last poll). OnMessage is fed through a queue so
+	-- toasts show up one by one instead of all at once; a long backlog only notifies for the newest few.
+	local notifyQueue, notifying = {}, false
+	local function drainNotifications()
+		if notifying then
+			return
+		end
+		notifying = true
+		task.spawn(function()
+			while alive and #notifyQueue > 0 do
+				Utility.SafeCall(opts.OnMessage, table.remove(notifyQueue, 1))
+				if #notifyQueue > 0 then
+					task.wait(notifySpacing)
+				end
+			end
+			notifying = false
+		end)
+	end
+	local function queueNotification(message)
+		if type(opts.OnMessage) ~= "function" or muted[message.UserId] then
+			return
+		end
+		table.insert(notifyQueue, message)
+		while #notifyQueue > notifyLimit do
+			table.remove(notifyQueue, 1)
+		end
+	end
+
 	-- mode: "history" (first load), "older" (prepended page) or "live" (poll results)
 	local function apply(list, mode)
 		local wasNear = isNearBottom()
@@ -5001,12 +5032,15 @@ return function(container, opts)
 				fresh = fresh + 1
 				if message.UserId ~= me.UserId then
 					fromOthers = fromOthers + 1
-					Utility.SafeCall(opts.OnMessage, message)
+					queueNotification(message)
 				end
 			end
 		end
 		repaintQuotes()
 		refreshEmpty()
+		-- start delivering only after the whole batch is queued, otherwise the first message goes out alone
+		-- and the rest of the same batch would each start their own delivery
+		drainNotifications()
 
 		if mode == "older" then
 			-- keep the reading position when older messages appear above
@@ -8569,7 +8603,7 @@ if env.MugiwaraUI and type(env.MugiwaraUI.Destroy) == "function" then
 end
 
 local Library = {
-	Version = "0.6.0",
+	Version = "0.6.1",
 	Windows = {},
 	Theme = Theme.new("Gear 5"),
 	Icons = Icons,

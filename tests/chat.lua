@@ -185,6 +185,30 @@ check(count(background.Rows) == backgroundBefore + 1, "BackgroundPoll keeps poll
 Window:Open()
 pump(3)
 
+-- notifications come one by one (spaced), only the newest of a burst, never for muted users
+local queued = {}
+local burst = Tab:Chat({
+	Transport = UI.ChatTransports.Memory({ Bots = false, Seed = {} }),
+	NotifyLimit = 3,
+	OnMessage = function(message)
+		table.insert(queued, message.Text)
+	end,
+})
+pump(3)
+for index = 1, 5 do
+	burst.Transport:Say(zoro, "m" .. index)
+end
+pump(1) -- a single poll delivers all five at once...
+check(#queued == 1 and queued[1] == "m3", "...but only the newest three are queued and the first is delivered alone: " .. table.concat(queued, ","))
+pump(1)
+check(#queued == 2 and queued[2] == "m4", "the next notification follows on its own")
+pump(1)
+check(#queued == 3 and queued[3] == "m5", "in order, one at a time")
+burst:Mute(zoro.UserId)
+burst.Transport:Say(zoro, "muted")
+pump(6)
+check(#queued == 3, "muted users never notify")
+
 --// offline handling ----------------------------------------------------------------------------------------------
 local flaky = UI.ChatTransports.Memory({ Bots = false, Seed = { "hi" } })
 local healthy = true

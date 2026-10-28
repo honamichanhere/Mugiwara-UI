@@ -46,7 +46,7 @@ ChatTab:Chat({
 	Transport = transport,
 	Height = 320,
 	MaxLength = 200,
-	BackgroundPoll = 20, -- keep listening (slowly) while the window is hidden, so the toast below can appear
+	BackgroundPoll = 8, -- keep listening while the window is hidden so the toast below can appear (uses more free requests)
 	OnMessage = function(message)
 		if not Window.Opened then
 			MugiwaraUI:Notify({

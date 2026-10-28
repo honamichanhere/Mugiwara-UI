@@ -6,3 +6,4 @@ Thumbs.db
 .wrangler/
 server/worker/node_modules/
 .dev.vars
+server/worker/wrangler.local.toml
