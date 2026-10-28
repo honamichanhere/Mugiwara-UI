@@ -8,6 +8,22 @@ binding = "DB"
 database_name = "mugiwara-chat"
 database_id = "REPLACE_WITH_YOUR_DATABASE_ID"
 
+# Hourly cleanup: deletes expired messages (RETENTION_HOURS), trims each channel (KEEP_MESSAGES), clears old IP rows.
+[triggers]
+crons = ["17 * * * *"]
+
+# Every value is a string. 0 means "off / unlimited" for the numeric limits.
 [vars]
-MAX_LENGTH = "200"    # characters per message
-COOLDOWN_MS = "1500"  # minimum time between two messages of the same user
+MAX_LENGTH = "200"             # characters per message
+COOLDOWN_MS = "1500"           # minimum time between two messages of the same user
+IP_SENDS_PER_MIN = "20"        # messages per minute per network (stops floods that rotate fake user ids)
+IP_NEW_USERS_PER_HOUR = "5"    # new Roblox ids one network may start chatting with per hour
+RETENTION_HOURS = "72"         # messages older than this disappear and are deleted (0 = keep until KEEP_MESSAGES)
+KEEP_MESSAGES = "1000"         # newest messages kept per channel
+VERIFY_ROBLOX = "true"         # names come from Roblox's API. "true" = strict (new accounts wait if Roblox is unreachable),
+                               # "lenient" = trust the client's names when Roblox is unreachable, "false" = never ask Roblox
+RESERVED_NAMES = "owner,admin,administrator,staff,moderator,system,mugiwara"  # whole-word display names nobody else may use
+OWNER_IDS = ""                 # comma separated Roblox user ids that may use reserved names, e.g. "123456,789012"
+FILTER = ""                    # optional content rules, comma separated: "links", "phone" (empty = no filtering)
+NOTICE = ""                    # optional text shown in the chat's privacy banner (empty = the built-in text)
+# IP_SALT: set it as a secret so stored network hashes cannot be brute-forced:  npx wrangler secret put IP_SALT

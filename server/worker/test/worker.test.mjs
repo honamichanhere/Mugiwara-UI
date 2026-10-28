@@ -8,6 +8,9 @@ import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import worker from "../src/index.js";
 
+// the Worker logs failed Roblox lookups with console.warn; the outage tests trigger that on purpose
+console.warn = () => {};
+
 const here = dirname(fileURLToPath(import.meta.url));
 const schema = readFileSync(join(here, "..", "schema.sql"), "utf8");
 
@@ -31,6 +34,7 @@ function createD1() {
 		},
 	});
 	return {
+		raw: db, // for tests that need to poke the database directly
 		prepare: (sql) => statement(sql),
 		batch: async (statements) => {
 			db.exec("BEGIN");
@@ -46,14 +50,26 @@ function createD1() {
 	};
 }
 
+// Every limit is switched off by default so each test only turns on what it is about.
 function makeEnv(extra = {}) {
-	return { DB: createD1(), MAX_LENGTH: "200", COOLDOWN_MS: "0", ...extra };
+	return {
+		DB: createD1(),
+		MAX_LENGTH: "200",
+		COOLDOWN_MS: "0",
+		IP_SENDS_PER_MIN: "0",
+		IP_NEW_USERS_PER_HOUR: "0",
+		RETENTION_HOURS: "0",
+		KEEP_MESSAGES: "1000",
+		VERIFY_ROBLOX: "false",
+		RESERVED_NAMES: "owner,admin",
+		...extra,
+	};
 }
 
-async function call(env, method, path, body) {
+async function call(env, method, path, body, headers = {}) {
 	const request = new Request("https://chat.test" + path, {
 		method,
-		headers: body ? { "content-type": "application/json" } : undefined,
+		headers: body ? { "content-type": "application/json", ...headers } : headers,
 		body: body ? JSON.stringify(body) : undefined,
 	});
 	const response = await worker.fetch(request, env);
@@ -77,12 +93,32 @@ async function test(name, fn) {
 	}
 }
 
+// fake Roblox users API for the name checks
+const realFetch = globalThis.fetch;
+function fakeRoblox(users, counter = { calls: 0 }) {
+	globalThis.fetch = async (url) => {
+		counter.calls++;
+		const id = Number(String(url).split("/").pop());
+		const user = users[id];
+		if (user === "down") return new Response("oops", { status: 503 });
+		if (!user) return new Response(JSON.stringify({ errors: [{ code: 3 }] }), { status: 404 });
+		return new Response(JSON.stringify({ id, ...user }), { status: 200 });
+	};
+	return counter;
+}
+const restoreFetch = () => {
+	globalThis.fetch = realFetch;
+};
+
+//// basics (unchanged behavior) ---------------------------------------------------------------------
+
 await test("health, CORS preflight and unknown routes", async () => {
 	const env = makeEnv();
 	assert.equal((await call(env, "GET", "/")).body.ok, true);
 	assert.equal((await call(env, "OPTIONS", "/v1/send")).status, 204);
 	assert.equal((await call(env, "GET", "/nope")).status, 404);
 	assert.equal((await call(env, "GET", "/v1/history?channel=BAD CHANNEL!")).status, 400);
+	assert.equal((await call(env, "GET", "/v1/send")).status, 405);
 });
 
 await test("send, history and poll", async () => {
@@ -219,6 +255,227 @@ await test("poll pages through large backlogs without skipping", async () => {
 	assert.equal(received.length, 130);
 	assert.equal(received[0], "n1");
 	assert.equal(received[129], "n130");
+});
+
+//// safeguards ----------------------------------------------------------------------------------------------
+
+await test("kill switch: read-only keeps reading, off stops everything but /v1/info", async () => {
+	const env = makeEnv();
+	await call(env, "POST", "/v1/send", { ...alice, text: "before" });
+
+	env.DB.raw.exec("UPDATE meta SET value = 1 WHERE key = 'mode'");
+	assert.equal((await call(env, "GET", "/v1/history?channel=global")).body.messages.length, 1, "read-only still shows history");
+	assert.equal((await call(env, "GET", "/v1/poll?channel=global&since=0")).status, 200);
+	const blockedSend = await call(env, "POST", "/v1/send", { ...alice, text: "nope" });
+	assert.equal(blockedSend.status, 503);
+	assert.equal(blockedSend.body.error, "chat_readonly");
+	assert.equal((await call(env, "POST", "/v1/delete", { channel: "global", id: 1, userId: 101, token: TOKEN_A })).body.error, "chat_readonly");
+	assert.equal((await call(env, "GET", "/v1/info")).body.mode, "readonly");
+
+	env.DB.raw.exec("UPDATE meta SET value = 2 WHERE key = 'mode'");
+	const off = await call(env, "GET", "/v1/history?channel=global");
+	assert.equal(off.status, 503);
+	assert.equal(off.body.error, "chat_disabled");
+	assert.equal((await call(env, "GET", "/v1/poll?channel=global&since=0")).body.error, "chat_disabled");
+	assert.equal((await call(env, "GET", "/v1/info")).body.mode, "off", "info still answers so clients can show why");
+
+	env.DB.raw.exec("UPDATE meta SET value = 0 WHERE key = 'mode'");
+	assert.equal((await call(env, "POST", "/v1/send", { ...alice, text: "back" })).status, 201, "switching it on again needs no redeploy");
+});
+
+await test("per-network send limit stops floods that rotate fake user ids", async () => {
+	const env = makeEnv({ IP_SENDS_PER_MIN: "3" });
+	const from = { "cf-connecting-ip": "203.0.113.7" };
+	for (let index = 1; index <= 3; index++) {
+		const sent = await call(env, "POST", "/v1/send", { ...alice, userId: 500 + index, name: `bot${index}`, text: "spam", token: `t${index}`.padEnd(20, "x") }, from);
+		assert.equal(sent.status, 201, `message ${index} passes`);
+	}
+	const flood = await call(env, "POST", "/v1/send", { ...alice, userId: 600, name: "bot4", text: "spam", token: "t4".padEnd(20, "x") }, from);
+	assert.equal(flood.status, 429);
+	assert.equal(flood.body.error, "ip_rate_limited");
+	const elsewhere = await call(env, "POST", "/v1/send", { ...bob, text: "different network" }, { "cf-connecting-ip": "198.51.100.9" });
+	assert.equal(elsewhere.status, 201, "other networks are unaffected");
+
+	// the window resets after a minute
+	env.DB.raw.exec("UPDATE ip_limits SET minute = minute - 2");
+	assert.equal((await call(env, "POST", "/v1/send", { ...alice, userId: 601, name: "bot5", text: "ok again", token: "t5".padEnd(20, "x") }, from)).status, 201);
+});
+
+await test("a network can only start chatting with a few new accounts per hour", async () => {
+	const env = makeEnv({ IP_NEW_USERS_PER_HOUR: "2" });
+	const from = { "cf-connecting-ip": "203.0.113.50" };
+	const as = (id) => ({ channel: "global", userId: id, name: `u${id}`, displayName: `U${id}`, token: `token-${id}`.padEnd(24, "x"), text: "hi" });
+	assert.equal((await call(env, "POST", "/v1/send", as(1001), from)).status, 201);
+	assert.equal((await call(env, "POST", "/v1/send", as(1002), from)).status, 201);
+	const third = await call(env, "POST", "/v1/send", as(1003), from);
+	assert.equal(third.status, 429);
+	assert.equal(third.body.error, "too_many_identities");
+	assert.equal((await call(env, "POST", "/v1/send", as(1001), from)).status, 201, "an account that already exists keeps working");
+});
+
+await test("network addresses are stored hashed, never raw", async () => {
+	const env = makeEnv({ IP_SENDS_PER_MIN: "5" });
+	await call(env, "POST", "/v1/send", { ...alice, text: "x" }, { "cf-connecting-ip": "203.0.113.99" });
+	const rows = env.DB.raw.prepare("SELECT ip_hash FROM ip_limits").all();
+	assert.equal(rows.length, 1);
+	assert.match(rows[0].ip_hash, /^[0-9a-f]{16}$/);
+	assert.ok(!JSON.stringify(rows).includes("203.0.113"));
+});
+
+await test("retention: expired messages vanish immediately and are deleted by the hourly cleanup", async () => {
+	const env = makeEnv({ RETENTION_HOURS: "1" });
+	await call(env, "POST", "/v1/send", { ...alice, text: "fresh" });
+	await call(env, "POST", "/v1/send", { ...bob, text: "old" });
+	env.DB.raw.exec("UPDATE messages SET created_at = created_at - 7200 WHERE text = 'old'"); // two hours ago
+
+	const history = await call(env, "GET", "/v1/history?channel=global");
+	assert.deepEqual(history.body.messages.map((m) => m.text), ["fresh"], "hidden even before it is physically deleted");
+	assert.equal((await call(env, "GET", "/v1/poll?channel=global&since=0")).body.messages.length, 1);
+	assert.equal(env.DB.raw.prepare("SELECT COUNT(*) AS n FROM messages").get().n, 2, "still stored until the cleanup runs");
+
+	let finished;
+	await worker.scheduled({}, env, { waitUntil: (promise) => (finished = promise) });
+	await finished;
+	assert.equal(env.DB.raw.prepare("SELECT COUNT(*) AS n FROM messages").get().n, 1, "the cron deleted it");
+});
+
+await test("the cleanup also trims each channel to KEEP_MESSAGES and drops old network rows", async () => {
+	const env = makeEnv({ KEEP_MESSAGES: "3" });
+	for (let index = 1; index <= 6; index++) await call(env, "POST", "/v1/send", { ...alice, text: `k${index}` });
+	env.DB.raw.exec("INSERT INTO ip_limits (ip_hash, minute, sends, hour, new_users) VALUES ('stale', 1, 1, 1, 0)");
+	let finished;
+	await worker.scheduled({}, env, { waitUntil: (promise) => (finished = promise) });
+	await finished;
+	const texts = env.DB.raw.prepare("SELECT text FROM messages ORDER BY id").all().map((row) => row.text);
+	assert.deepEqual(texts, ["k4", "k5", "k6"]);
+	assert.equal(env.DB.raw.prepare("SELECT COUNT(*) AS n FROM ip_limits WHERE ip_hash = 'stale'").get().n, 0);
+});
+
+await test("names come from Roblox, so a client cannot invent a display name", async () => {
+	const env = makeEnv({ VERIFY_ROBLOX: "true" });
+	const counter = fakeRoblox({ 101: { name: "alice_rbx", displayName: "Alice Real" } });
+	try {
+		const sent = await call(env, "POST", "/v1/send", { ...alice, displayName: "Totally Someone Else", name: "faker", text: "hi" });
+		assert.equal(sent.status, 201);
+		assert.equal(sent.body.message.name, "alice_rbx");
+		assert.equal(sent.body.message.displayName, "Alice Real");
+		await call(env, "POST", "/v1/send", { ...alice, text: "again" });
+		assert.equal(counter.calls, 1, "the profile is cached, Roblox is asked once");
+	} finally {
+		restoreFetch();
+	}
+});
+
+await test("an id that does not exist is rejected", async () => {
+	const env = makeEnv({ VERIFY_ROBLOX: "true" });
+	fakeRoblox({ 101: { name: "alice_rbx", displayName: "Alice" } });
+	try {
+		const ghost = await call(env, "POST", "/v1/send", { ...alice, userId: 999999, text: "boo" });
+		assert.equal(ghost.status, 400);
+		assert.equal(ghost.body.error, "unknown_user");
+	} finally {
+		restoreFetch();
+	}
+});
+
+await test("strict mode: a Roblox outage holds back NEW accounts instead of trusting the client's names", async () => {
+	const env = makeEnv({ VERIFY_ROBLOX: "true" });
+	const counter = fakeRoblox({ 202: "down" });
+	try {
+		const blocked = await call(env, "POST", "/v1/send", { ...bob, displayName: "Owner Of The Hub", text: "let me in" });
+		assert.equal(blocked.status, 503);
+		assert.equal(blocked.body.error, "verification_unavailable");
+		assert.equal(counter.calls, 2, "the lookup is retried once");
+		assert.equal(env.DB.raw.prepare("SELECT COUNT(*) AS n FROM messages").get().n, 0, "nothing was stored");
+		assert.equal(env.DB.raw.prepare("SELECT COUNT(*) AS n FROM users").get().n, 0, "and no identity was bound");
+	} finally {
+		restoreFetch();
+	}
+});
+
+await test("a rate-limited lookup is retried and succeeds", async () => {
+	const env = makeEnv({ VERIFY_ROBLOX: "true" });
+	let calls = 0;
+	globalThis.fetch = async () => {
+		calls++;
+		if (calls === 1) return new Response("slow down", { status: 429 });
+		return new Response(JSON.stringify({ id: 101, name: "alice_rbx", displayName: "Alice Real" }), { status: 200 });
+	};
+	try {
+		const sent = await call(env, "POST", "/v1/send", { ...alice, displayName: "Fake Name", text: "hi" });
+		assert.equal(sent.status, 201);
+		assert.equal(sent.body.message.displayName, "Alice Real");
+		assert.equal(calls, 2);
+	} finally {
+		restoreFetch();
+	}
+});
+
+await test("accounts with a cached name keep chatting through an outage", async () => {
+	const env = makeEnv({ VERIFY_ROBLOX: "true" });
+	fakeRoblox({ 101: { name: "alice_rbx", displayName: "Alice Real" } });
+	try {
+		assert.equal((await call(env, "POST", "/v1/send", { ...alice, text: "first" })).status, 201);
+		env.DB.raw.exec("UPDATE profiles SET fetched_at = fetched_at - 864000"); // the cache is 10 days old: due for a refresh
+		fakeRoblox({ 101: "down" });
+		const during = await call(env, "POST", "/v1/send", { ...alice, displayName: "Spoof", text: "second" });
+		assert.equal(during.status, 201, "the stale cached name is better than nothing");
+		assert.equal(during.body.message.displayName, "Alice Real");
+	} finally {
+		restoreFetch();
+	}
+});
+
+await test("lenient mode trusts the client's names when Roblox cannot be reached", async () => {
+	const env = makeEnv({ VERIFY_ROBLOX: "lenient" });
+	fakeRoblox({ 202: "down" });
+	try {
+		const outage = await call(env, "POST", "/v1/send", { ...bob, text: "still works" });
+		assert.equal(outage.status, 201);
+		assert.equal(outage.body.message.displayName, "Bob");
+	} finally {
+		restoreFetch();
+	}
+});
+
+await test("reserved display names are for the owners only", async () => {
+	const env = makeEnv({ VERIFY_ROBLOX: "true", OWNER_IDS: "202" });
+	fakeRoblox({ 101: { name: "alice_rbx", displayName: "Admin" }, 202: { name: "bob_rbx", displayName: "Owner" }, 303: { name: "carl", displayName: "Administrator Fan" } });
+	try {
+		const impostor = await call(env, "POST", "/v1/send", { ...alice, text: "I am the admin" });
+		assert.equal(impostor.status, 403);
+		assert.equal(impostor.body.error, "reserved_name");
+		assert.equal((await call(env, "POST", "/v1/send", { ...bob, text: "the real owner" })).status, 201, "OWNER_IDS may use reserved names");
+		const partial = await call(env, "POST", "/v1/send", { channel: "global", userId: 303, name: "carl", displayName: "x", token: TOKEN_A, text: "hi" });
+		assert.equal(partial.status, 201, "only whole words are reserved ('Administrator Fan' is fine with 'admin' reserved)");
+	} finally {
+		restoreFetch();
+	}
+});
+
+await test("the optional filter (off by default) can block links and phone numbers", async () => {
+	const open = makeEnv();
+	assert.equal((await call(open, "POST", "/v1/send", { ...alice, text: "join discord.gg/abc or call 0812 3456 7890" })).status, 201, "no filter by default");
+
+	const strict = makeEnv({ FILTER: "links,phone" });
+	for (const text of ["go to https://evil.example", "visit www.scam.net now", "discord.gg/free-robux", "free stuff at robux.gg", "call me 0812-3456-7890", "+62 812 3456 7890"]) {
+		const blocked = await call(strict, "POST", "/v1/send", { ...alice, text });
+		assert.equal(blocked.status, 400, `blocked: ${text}`);
+		assert.equal(blocked.body.error, "blocked_content");
+	}
+	for (const text of ["hello friends", "I have 3 apples and 12 oranges", "level 99999 reached", "a.b is not a link", "see you at 9.30"]) {
+		assert.equal((await call(strict, "POST", "/v1/send", { ...alice, text })).status, 201, `allowed: ${text}`);
+	}
+
+	const linksOnly = makeEnv({ FILTER: "links" });
+	assert.equal((await call(linksOnly, "POST", "/v1/send", { ...alice, text: "call 0812 3456 7890" })).status, 201, "rules are independent");
+});
+
+await test("/v1/info exposes the settings clients need, and no secrets", async () => {
+	const env = makeEnv({ RETENTION_HOURS: "48", FILTER: "links", NOTICE: "Be nice.", COOLDOWN_MS: "1500", IP_SALT: "secret-salt" });
+	const result = await call(env, "GET", "/v1/info");
+	assert.deepEqual(result.body, { mode: "on", maxLength: 200, cooldownMs: 1500, retentionHours: 48, filter: ["links"], notice: "Be nice." });
+	assert.ok(!JSON.stringify(result.body).includes("secret-salt"));
 });
 
 console.log(`worker tests passed (${passed})`);

@@ -1,11 +1,15 @@
 --// Chat transports: how the Chat element talks to a backend. A transport is a table with:
 --//
 --//   transport.User                      { UserId, Name, DisplayName }  (who "me" is)
---//   transport:History({ Limit, Before }) -> { Messages, Cursor, More } | nil, error
---//   transport:Poll(cursor)               -> { Messages, Cursor }       | nil, error   (new messages AND deletions)
---//   transport:Send({ Text, ReplyTo })    -> message                    | nil, error
---//   transport:Delete(id)                 -> true                       | nil, error
+--//   transport:History({ Limit, Before }) -> { Messages, Cursor, More } | nil, error, code
+--//   transport:Poll(cursor)               -> { Messages, Cursor }       | nil, error, code  (new messages AND deletions)
+--//   transport:Send({ Text, ReplyTo })    -> message                    | nil, error, code
+--//   transport:Delete(id)                 -> true                       | nil, error, code
+--//   transport:Info()                     -> { Mode, RetentionHours, MaxLength, CooldownMs, Notice } | nil   (optional)
 --//   transport:Destroy()                  (optional)
+--//
+--// `code` is optional: "disabled" (the owner turned the chat off) and "readonly" make the Chat element lock its
+--// input instead of reporting a plain connection error. Mode is "on", "readonly" or "off".
 --//
 --// A message is { Id, UserId, Name, DisplayName, Text, Time (unix seconds), Deleted, Reply = { Id, Name, Text } }.
 --// All calls may yield. Ready-made transports: Http (the Cloudflare Worker in server/worker) and Memory (demo).
@@ -90,7 +94,13 @@ function Transports.Http(opts)
 		end
 		local failed = (response.StatusCode and response.StatusCode >= 400) or (decoded and decoded.error)
 		if failed then
-			return nil, (decoded and decoded.message) or ("HTTP " .. tostring(response.StatusCode))
+			local code = decoded and decoded.error
+			if code == "chat_disabled" then
+				code = "disabled"
+			elseif code == "chat_readonly" then
+				code = "readonly"
+			end
+			return nil, (decoded and decoded.message) or ("HTTP " .. tostring(response.StatusCode)), code
 		end
 		return decoded or {}
 	end
@@ -121,27 +131,27 @@ function Transports.Http(opts)
 
 	function transport:History(options)
 		options = options or {}
-		local result, reason = call("GET", "/v1/history", {
+		local result, reason, code = call("GET", "/v1/history", {
 			channel = channel,
 			limit = options.Limit or 50,
 			before = options.Before,
 		})
 		if not result then
-			return nil, reason
+			return nil, reason, code
 		end
 		return { Messages = mapAll(result.messages), Cursor = result.rev, More = result.more == true }
 	end
 
 	function transport:Poll(cursor)
-		local result, reason = call("GET", "/v1/poll", { channel = channel, since = cursor or 0 })
+		local result, reason, code = call("GET", "/v1/poll", { channel = channel, since = cursor or 0 })
 		if not result then
-			return nil, reason
+			return nil, reason, code
 		end
 		return { Messages = mapAll(result.messages), Cursor = result.rev }
 	end
 
 	function transport:Send(options)
-		local result, reason = call("POST", "/v1/send", nil, {
+		local result, reason, code = call("POST", "/v1/send", nil, {
 			channel = channel,
 			userId = self.User.UserId,
 			name = self.User.Name,
@@ -151,22 +161,37 @@ function Transports.Http(opts)
 			token = token,
 		})
 		if not result or not result.message then
-			return nil, reason or "Could not send"
+			return nil, reason or "Could not send", code
 		end
 		return map(result.message)
 	end
 
 	function transport:Delete(id)
-		local result, reason = call("POST", "/v1/delete", nil, {
+		local result, reason, code = call("POST", "/v1/delete", nil, {
 			channel = channel,
 			id = id,
 			userId = self.User.UserId,
 			token = token,
 		})
 		if not result then
-			return nil, reason
+			return nil, reason, code
 		end
 		return true
+	end
+
+	-- the owner's settings: kill switch state, retention, limits and the privacy notice
+	function transport:Info()
+		local result = call("GET", "/v1/info")
+		if not result then
+			return nil
+		end
+		return {
+			Mode = result.mode or "on",
+			RetentionHours = result.retentionHours,
+			MaxLength = result.maxLength,
+			CooldownMs = result.cooldownMs,
+			Notice = result.notice,
+		}
 	end
 
 	return transport
@@ -290,6 +315,10 @@ function Transports.Memory(opts)
 		rev = rev + 1
 		message.Rev = rev
 		return true
+	end
+
+	function transport:Info()
+		return { Mode = "on" }
 	end
 
 	function transport:Destroy()

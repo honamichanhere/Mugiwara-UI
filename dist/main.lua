@@ -1,4 +1,4 @@
--- Mugiwara UI v0.6.2
+-- Mugiwara UI v0.7.0
 -- Glass + neon Gear 5 UI library for Roblox script hubs.
 -- https://github.com/honamichanhere/Mugiwara-UI  |  MIT License
 
@@ -396,11 +396,15 @@ __modules["components/ChatTransports"] = function(Import)
 --// Chat transports: how the Chat element talks to a backend. A transport is a table with:
 --//
 --//   transport.User                      { UserId, Name, DisplayName }  (who "me" is)
---//   transport:History({ Limit, Before }) -> { Messages, Cursor, More } | nil, error
---//   transport:Poll(cursor)               -> { Messages, Cursor }       | nil, error   (new messages AND deletions)
---//   transport:Send({ Text, ReplyTo })    -> message                    | nil, error
---//   transport:Delete(id)                 -> true                       | nil, error
+--//   transport:History({ Limit, Before }) -> { Messages, Cursor, More } | nil, error, code
+--//   transport:Poll(cursor)               -> { Messages, Cursor }       | nil, error, code  (new messages AND deletions)
+--//   transport:Send({ Text, ReplyTo })    -> message                    | nil, error, code
+--//   transport:Delete(id)                 -> true                       | nil, error, code
+--//   transport:Info()                     -> { Mode, RetentionHours, MaxLength, CooldownMs, Notice } | nil   (optional)
 --//   transport:Destroy()                  (optional)
+--//
+--// `code` is optional: "disabled" (the owner turned the chat off) and "readonly" make the Chat element lock its
+--// input instead of reporting a plain connection error. Mode is "on", "readonly" or "off".
 --//
 --// A message is { Id, UserId, Name, DisplayName, Text, Time (unix seconds), Deleted, Reply = { Id, Name, Text } }.
 --// All calls may yield. Ready-made transports: Http (the Cloudflare Worker in server/worker) and Memory (demo).
@@ -485,7 +489,13 @@ function Transports.Http(opts)
 		end
 		local failed = (response.StatusCode and response.StatusCode >= 400) or (decoded and decoded.error)
 		if failed then
-			return nil, (decoded and decoded.message) or ("HTTP " .. tostring(response.StatusCode))
+			local code = decoded and decoded.error
+			if code == "chat_disabled" then
+				code = "disabled"
+			elseif code == "chat_readonly" then
+				code = "readonly"
+			end
+			return nil, (decoded and decoded.message) or ("HTTP " .. tostring(response.StatusCode)), code
 		end
 		return decoded or {}
 	end
@@ -516,27 +526,27 @@ function Transports.Http(opts)
 
 	function transport:History(options)
 		options = options or {}
-		local result, reason = call("GET", "/v1/history", {
+		local result, reason, code = call("GET", "/v1/history", {
 			channel = channel,
 			limit = options.Limit or 50,
 			before = options.Before,
 		})
 		if not result then
-			return nil, reason
+			return nil, reason, code
 		end
 		return { Messages = mapAll(result.messages), Cursor = result.rev, More = result.more == true }
 	end
 
 	function transport:Poll(cursor)
-		local result, reason = call("GET", "/v1/poll", { channel = channel, since = cursor or 0 })
+		local result, reason, code = call("GET", "/v1/poll", { channel = channel, since = cursor or 0 })
 		if not result then
-			return nil, reason
+			return nil, reason, code
 		end
 		return { Messages = mapAll(result.messages), Cursor = result.rev }
 	end
 
 	function transport:Send(options)
-		local result, reason = call("POST", "/v1/send", nil, {
+		local result, reason, code = call("POST", "/v1/send", nil, {
 			channel = channel,
 			userId = self.User.UserId,
 			name = self.User.Name,
@@ -546,22 +556,37 @@ function Transports.Http(opts)
 			token = token,
 		})
 		if not result or not result.message then
-			return nil, reason or "Could not send"
+			return nil, reason or "Could not send", code
 		end
 		return map(result.message)
 	end
 
 	function transport:Delete(id)
-		local result, reason = call("POST", "/v1/delete", nil, {
+		local result, reason, code = call("POST", "/v1/delete", nil, {
 			channel = channel,
 			id = id,
 			userId = self.User.UserId,
 			token = token,
 		})
 		if not result then
-			return nil, reason
+			return nil, reason, code
 		end
 		return true
+	end
+
+	-- the owner's settings: kill switch state, retention, limits and the privacy notice
+	function transport:Info()
+		local result = call("GET", "/v1/info")
+		if not result then
+			return nil
+		end
+		return {
+			Mode = result.mode or "on",
+			RetentionHours = result.retentionHours,
+			MaxLength = result.maxLength,
+			CooldownMs = result.cooldownMs,
+			Notice = result.notice,
+		}
 	end
 
 	return transport
@@ -685,6 +710,10 @@ function Transports.Memory(opts)
 		rev = rev + 1
 		message.Rev = rev
 		return true
+	end
+
+	function transport:Info()
+		return { Mode = "on" }
 	end
 
 	function transport:Destroy()
@@ -4483,6 +4512,7 @@ end
 --       History (messages per page, 50), PollInterval (3 s while chatting), IdlePollInterval (8 s),
 --       BackgroundPoll (seconds; keep polling this slowly while the chat is NOT on screen, so OnMessage can
 --       notify. Default: stop polling when hidden, which saves free-tier requests),
+--       Notice (privacy banner: nil = built-in text or the server's NOTICE, false = none, string = your text),
 --       Placeholder, OnMessage(message) (new messages from other people; called one at a time,
 --       NotifySpacing seconds apart (0.8), and only for the newest NotifyLimit (5) of a burst)
 -- Methods: Send(text), Refresh(), Clear(), Mute(userId), Unmute(userId), GetMuted(), GetMessages()
@@ -4531,10 +4561,17 @@ return function(container, opts)
 		Parent = el.Right,
 	})
 
-	local connection = "connecting" -- connecting | live | offline
+	-- connecting | live | offline | readonly (owner locked sending) | disabled (owner turned the chat off)
+	local connection = "connecting"
 	local function paintStatus()
-		local colors = { connecting = theme.Tokens.Muted, live = theme.Tokens.Success, offline = theme.Tokens.Danger }
-		local labels = { connecting = "Connecting", live = "Live", offline = "Offline" }
+		local colors = {
+			connecting = theme.Tokens.Muted,
+			live = theme.Tokens.Success,
+			offline = theme.Tokens.Danger,
+			readonly = theme.Tokens.Warning,
+			disabled = theme.Tokens.Muted,
+		}
+		local labels = { connecting = "Connecting", live = "Live", offline = "Offline", readonly = "Read-only", disabled = "Disabled" }
 		dot.BackgroundColor3 = colors[connection]
 		statusLabel.TextColor3 = colors[connection]
 		statusLabel.Text = labels[connection]
@@ -4560,7 +4597,7 @@ return function(container, opts)
 		Name = "ChatList",
 		Size = UDim2.new(1, 0, 0, height + 10),
 		BackgroundTransparency = 1,
-		LayoutOrder = 2,
+		LayoutOrder = 3,
 		Parent = el.Content,
 	})
 	Utility.Padding(listWrap, 10, 0, 0, 0)
@@ -4626,7 +4663,7 @@ return function(container, opts)
 		Size = UDim2.new(1, 0, 0, 46),
 		BackgroundTransparency = 1,
 		Visible = false,
-		LayoutOrder = 3,
+		LayoutOrder = 4,
 		Parent = el.Content,
 	})
 	Utility.Padding(replyWrap, 10, 0, 0, 0)
@@ -4661,7 +4698,7 @@ return function(container, opts)
 		Name = "Input",
 		Size = UDim2.new(1, 0, 0, 50),
 		BackgroundTransparency = 1,
-		LayoutOrder = 4,
+		LayoutOrder = 5,
 		Parent = el.Content,
 	})
 	Utility.Padding(inputWrap, 10, 0, 0, 0)
@@ -4792,6 +4829,59 @@ return function(container, opts)
 		button.MouseButton1Click:Connect(onClick)
 		return button
 	end
+
+	--// privacy banner: what this chat is, shown until dismissed (remembered per device) -----------------
+	local noticePath = (window.Folder or "MugiwaraUI") .. "/chat-notice.txt"
+	local defaultNotice = "Messages are public to everyone using this hub and are stored on a server. Don't share personal information."
+	local noticeText = nil
+	local noticeWrap = Create("Frame", {
+		Name = "PrivacyNotice",
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		Visible = false,
+		LayoutOrder = 2,
+		Parent = el.Content,
+	})
+	Utility.Padding(noticeWrap, 10, 0, 0, 0)
+	local noticeBox = Base.Field(theme, noticeWrap, UDim2.new(1, 0, 0, 0))
+	noticeBox.AutomaticSize = Enum.AutomaticSize.Y
+	local noticeInner = Create("Frame", {
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		Parent = noticeBox,
+	})
+	Utility.Padding(noticeInner, 10, 10, 12, 12)
+	Utility.List(noticeInner, 8, Enum.FillDirection.Vertical, Enum.HorizontalAlignment.Right)
+	local noticeLabel = Create("TextLabel", {
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Font = Utility.Fonts.Desc,
+		TextSize = 12,
+		TextWrapped = true,
+		LayoutOrder = 1,
+		Parent = noticeInner,
+	})
+	theme:Bind(noticeLabel, { TextColor3 = "SubText" })
+	pill(noticeInner, "Got it", 2, function()
+		noticeWrap.Visible = false
+		if noticeText and Compat.FilesSupported then
+			Compat.EnsureFolder(window.Folder or "MugiwaraUI")
+			Compat.WriteFile(noticePath, noticeText)
+		end
+	end)
+
+	-- shows the banner with this text unless the user already dismissed exactly this text
+	local function setNotice(text)
+		if opts.Notice == false then
+			return
+		end
+		noticeText = text
+		noticeLabel.Text = text
+		noticeWrap.Visible = Compat.ReadFile(noticePath) ~= text
+	end
+	setNotice(type(opts.Notice) == "string" and opts.Notice or defaultNotice)
 
 	local function paintRow(row)
 		local message = row.Message
@@ -5071,10 +5161,59 @@ return function(container, opts)
 		paintStatus()
 	end
 
+	-- the owner's kill switch: "on" | "readonly" | "off". Locks the input instead of showing a connection error.
+	local chatMode = "on"
+	local function applyMode(mode)
+		chatMode = mode
+		local blocked = mode ~= "on"
+		box.TextEditable = not blocked
+		if mode == "off" then
+			box.PlaceholderText = "Chat is turned off"
+			setConnection("disabled")
+		elseif mode == "readonly" then
+			box.PlaceholderText = "Chat is read-only right now"
+			setConnection("readonly")
+		else
+			box.PlaceholderText = opts.Placeholder or "Message..."
+			if connection == "disabled" or connection == "readonly" then
+				setConnection("live")
+			end
+		end
+	end
+
+	-- asks the backend for its settings (mode, limits, privacy notice)
+	local function refreshInfo()
+		if type(transport.Info) ~= "function" then
+			return
+		end
+		local ok, info = pcall(transport.Info, transport)
+		if not ok or type(info) ~= "table" then
+			return
+		end
+		if info.MaxLength and info.MaxLength > 0 then
+			maxLength = math.min(maxLength, info.MaxLength)
+		end
+		if info.CooldownMs then
+			cooldown = math.max(cooldown, info.CooldownMs / 1000)
+		end
+		if type(opts.Notice) ~= "string" then
+			local text = info.Notice or defaultNotice
+			if info.RetentionHours and info.RetentionHours > 0 then
+				text = text .. " Messages are deleted after " .. info.RetentionHours .. " hours."
+			end
+			setNotice(text)
+		end
+		applyMode(info.Mode or "on")
+	end
+
 	local function loadHistory()
-		local result, reason = transport:History({ Limit = pageSize })
+		local result, reason, code = transport:History({ Limit = pageSize })
 		if not result then
-			setConnection("offline")
+			if code == "disabled" then
+				applyMode("off")
+			else
+				setConnection("offline")
+			end
 			return false, reason
 		end
 		cursor = result.Cursor
@@ -5083,7 +5222,8 @@ return function(container, opts)
 		loaded = true
 		refreshEmpty()
 		scrollToBottom()
-		setConnection("live")
+		-- a locked chat (read-only) keeps its own status even though reading works
+		setConnection(chatMode == "readonly" and "readonly" or "live")
 		return true
 	end
 
@@ -5122,14 +5262,20 @@ return function(container, opts)
 	end
 
 	local function pollOnce()
-		local result = transport:Poll(cursor)
+		local result, _, code = transport:Poll(cursor)
 		if not result then
-			setConnection("offline")
+			if code == "disabled" then
+				applyMode("off")
+			else
+				setConnection("offline")
+			end
 			return false
 		end
 		cursor = result.Cursor
 		apply(result.Messages, "live")
-		if connection ~= "live" then
+		if chatMode == "off" then
+			applyMode("on")
+		elseif connection ~= "live" and connection ~= "readonly" then
 			setConnection("live")
 		end
 		return true
@@ -5148,26 +5294,39 @@ return function(container, opts)
 	-- poll loop: only while the chat is actually on screen, faster while people are talking
 	task.spawn(function()
 		local failures = 0
+		local lastInfo = -math.huge
 		while alive and el.Frame:IsDescendantOf(game) do
 			local waitFor = 1
 			local active = isActive()
 			if active or opts.BackgroundPoll then
-				local ok
-				if not loaded then
-					ok = loadHistory()
-				else
-					ok = pollOnce()
+				-- settings at the start, and every 30 s while the chat is locked (to notice when it is switched back on)
+				if lastInfo == -math.huge or (chatMode ~= "on" and os.clock() - lastInfo > 30) then
+					lastInfo = os.clock()
+					refreshInfo()
 				end
-				if ok then
-					failures = 0
-					if active then
-						waitFor = (os.clock() - lastActivity < 20) and fastPoll or slowPoll
-					else
-						waitFor = opts.BackgroundPoll
-					end
+
+				if chatMode == "off" then
+					waitFor = 5
 				else
-					failures = failures + 1
-					waitFor = math.min(slowPoll * (2 ^ failures), 30)
+					local ok
+					if not loaded then
+						ok = loadHistory()
+					else
+						ok = pollOnce()
+					end
+					if ok then
+						failures = 0
+						if active then
+							waitFor = (os.clock() - lastActivity < 20) and fastPoll or slowPoll
+						else
+							waitFor = opts.BackgroundPoll
+						end
+					elseif chatMode == "off" then
+						waitFor = 5
+					else
+						failures = failures + 1
+						waitFor = math.min(slowPoll * (2 ^ failures), 30)
+					end
 				end
 			end
 			task.wait(waitFor)
@@ -5178,6 +5337,10 @@ return function(container, opts)
 	local function doSend(raw)
 		local text = trim(raw)
 		if text == "" or sending then
+			return
+		end
+		if chatMode ~= "on" then
+			notice(chatMode == "off" and "Chat is turned off" or "Chat is read-only right now")
 			return
 		end
 		if #text > maxLength then
@@ -5193,10 +5356,15 @@ return function(container, opts)
 		local replyId = replyTarget and replyTarget.Id or nil
 
 		task.spawn(function()
-			local message, reason = transport:Send({ Text = text, ReplyTo = replyId })
+			local message, reason, code = transport:Send({ Text = text, ReplyTo = replyId })
 			sending = false
 			sendLabel.Text = "Send"
 			if not message then
+				if code == "readonly" then
+					applyMode("readonly")
+				elseif code == "disabled" then
+					applyMode("off")
+				end
 				notice(reason or "Could not send")
 				return
 			end
@@ -5333,6 +5501,7 @@ return function(container, opts)
 	el.OlderButton = olderButton
 	el.NewPill = newPill
 	el.Status = statusLabel
+	el.Notice = noticeWrap
 	el.SelectRow = selectRow
 
 	return Base.Finish(container, el, opts, "Chat")
@@ -8606,7 +8775,7 @@ if env.MugiwaraUI and type(env.MugiwaraUI.Destroy) == "function" then
 end
 
 local Library = {
-	Version = "0.6.2",
+	Version = "0.7.0",
 	Windows = {},
 	Theme = Theme.new("Gear 5"),
 	Icons = Icons,

@@ -2,6 +2,17 @@
 
 Versions follow `package.json`. Every release is a git tag (`v0.6.1`, ...); `dist/main.lua` at that tag is what users load.
 
+## 0.7.0
+- **Chat safeguards** (all optional and configurable in `server/worker/wrangler.toml`):
+  - kill switch (on / read-only / off, one SQL command, no redeploy) and a matching state in the chat ("Read-only", "Disabled", locked input, unlocks by itself);
+  - per-network rate limits (`IP_SENDS_PER_MIN`, `IP_NEW_USERS_PER_HOUR`) with hashed addresses;
+  - retention (`RETENTION_HOURS` 72, `KEEP_MESSAGES` 1000) enforced on read and by an hourly cron job;
+  - names verified against Roblox's API (cached a week, one retry; strict by default: Roblox sometimes answers Cloudflare with HTTP 429, then a *new* account is asked to try again in a moment, `VERIFY_ROBLOX = "lenient"` trusts the client instead), reserved names (`RESERVED_NAMES`, `OWNER_IDS`);
+  - optional link / phone filter (`FILTER`, off by default);
+  - `GET /v1/info`, privacy banner in the chat (`Notice` option / `NOTICE` variable).
+- `server/worker/admin.sql` and `npm run chat:on|readonly|off`; transports pass an error `code` and gain `Info()`.
+- Existing deployments: re-run `schema.sql` and `wrangler deploy` (see the Worker README). Old clients keep working.
+
 ## 0.6.2
 - The floating open button now starts in the middle of the left edge (was top center). `OpenButton = { Position = UDim2... }` overrides it; `OpenButton = true` no longer errors.
 

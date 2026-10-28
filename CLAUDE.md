@@ -83,13 +83,15 @@ scratchpad and run them with `node`.
 - **Chat backend**: a Cloudflare Worker + D1 deployed in the owner's own free Cloudflare account (the owner created
   the account and approved `wrangler login`). The real `database_id` lives only in the gitignored
   `server/worker/wrangler.local.toml`; deploy with `npx wrangler deploy -c wrangler.local.toml` from
-  `server/worker`. The public URL is **not** committed on purpose (anyone with it can use the free quota); ask the
+  `server/worker`. After upgrading the Worker code run `schema.sql` again, then deploy (README in that folder).
+Kill switch: `npm run chat:off|readonly|on` in `server/worker`. The public URL is **not** committed on purpose (anyone with it can use the free quota); ask the
   owner or run `npx wrangler deployments list -c wrangler.local.toml`.
 
 ## Decisions the owner made (do not redo them)
 
-- Free services only. Chat has **no moderation** (no filter, bans, reports); only limits that protect the free tier
-  (length cap, cooldown, pruning). The owner explicitly chose this.
+- Free services only. Chat has **no moderation** (no word lists, bans, reports); the owner explicitly chose this. After a
+  risk discussion (minors, hosted content, privacy, abuse) the owner asked for the cheap safeguards: kill switch,
+  per-network limits, retention, Roblox-verified names, reserved names, optional filter (off by default), privacy banner.
 - Themes are exactly Gear 5 (default), Gear 4, Gear 3, Normal.
 - An accepted key is always saved (`SaveKey = false` opts out); there is no "remember" switch.
 - Sections nest at most 2 levels. WindUI parity is not a goal beyond common hubs.
@@ -97,8 +99,8 @@ scratchpad and run them with `node`.
 ## Status
 
 Done and tested by the owner in an executor: window, all elements except chat, themes, Key / Loading UI, icons.
-Not verified yet: the **live chat between two real accounts**, behavior on every executor (Delta, Xeno, Solara) and
-on real phones. Missing compared to WindUI: Video, Viewport.
+The live chat was tested by the owner with a friend (v0.6.x). Not verified yet: the chat safeguards (v0.7.0) on real
+accounts, behavior on every executor (Delta, Xeno, Solara) and on real phones. Missing compared to WindUI: Video, Viewport.
 
 ## Releasing
 

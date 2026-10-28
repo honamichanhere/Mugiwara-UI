@@ -11,7 +11,7 @@ A glass + neon UI library for Roblox script hubs, themed after Luffy's **Gear 5*
 Load a **pinned version** (recommended). A tag never changes, so a later push cannot break the hubs that use it:
 
 ```lua
-local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.6.2/dist/main.lua"))()
+local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.7.0/dist/main.lua"))()
 ```
 
 `.../main/dist/main.lua` always serves the newest build (GitHub caches it for about 5 minutes). Available tags are listed in the
@@ -20,7 +20,7 @@ local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/ho
 ## Quick start
 
 ```lua
-local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.6.2/dist/main.lua"))()
+local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.7.0/dist/main.lua"))()
 
 local Window = MugiwaraUI:CreateWindow({
     Title = "Mugiwara Hub",
@@ -52,7 +52,7 @@ To test local changes without pushing: run `npm run build`, copy `dist/main.lua`
 Three pieces of the same set, all drawn in the active theme:
 
 ```lua
-local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.6.2/dist/main.lua"))()
+local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.7.0/dist/main.lua"))()
 
 -- 1) Key UI: a separate card. Validate is YOUR check (HTTP request, hash...), it may yield.
 local KeyUI = MugiwaraUI:KeySystem({
@@ -242,16 +242,23 @@ local chat = tab:Chat({
 
 Click a message to Reply / Copy / Delete (your own) / Mute (someone else's). Options: `Height`, `MaxLength` (200),
 `Cooldown` (1.5 s between sends), `History` (messages per page, 50), `PollInterval` (3 s while people talk),
-`IdlePollInterval` (8 s), `BackgroundPoll`, `Placeholder`, `OnMessage(message)` (called one at a time, `NotifySpacing` seconds apart (0.8), and only for the newest `NotifyLimit` (5) messages of a burst; never for muted users).
+`IdlePollInterval` (8 s), `BackgroundPoll`, `Notice`, `Placeholder`, `OnMessage(message)` (called one at a time, `NotifySpacing` seconds apart (0.8), and only for the newest `NotifyLimit` (5) messages of a burst; never for muted users).
 Methods: `Send(text)`, `Refresh()`, `Clear()`, `Mute(userId)`, `Unmute(userId)`, `GetMuted()`, `GetMessages()`.
 
 Things to know:
 
-- **Names come from `LocalPlayer`** (DisplayName, @username, headshot). They cannot be proven from an executor. The
-  Worker binds each Roblox user id to a per-device secret token the first time it sends, so nobody can post as an
-  account that already chatted or delete its messages.
-- **No moderation** (no filter, bans or reports). The only limits protect the free tier: length cap, per-user
-  cooldown, pruning. Roblox does not filter this chat; the backend stores ids, names and messages.
+- **Names**: the client sends `LocalPlayer`'s name; the Worker replaces it with what Roblox's API says for that user id
+  (so a display name cannot be invented; if Roblox rate-limits the lookup, a *new* account is asked to try again in a moment) and binds each Roblox user id to a per-device secret token the first time it
+  sends, so nobody can post as an account that already chatted or delete its messages. Which person is behind an id
+  still cannot be proven from an executor.
+- **No moderation** (no word lists, bans or reports), but there are cheap safeguards, all configurable: a **kill
+  switch** (on / read-only / off with one SQL command, clients show "Read-only" / "Disabled"), per-user and
+  per-network rate limits, **retention** (messages expire after `RETENTION_HOURS`, default 72), reserved names
+  ("Owner", "Admin"...), and an optional link / phone-number filter that is off by default. See
+  [server/worker/README.md](server/worker/README.md#safeguards).
+- **Privacy**: messages, Roblox ids and names are stored in your own D1 database and Roblox does not filter this chat.
+  The chat shows a privacy banner until the user taps "Got it" (`Notice = false` hides it, `Notice = "text"` replaces it;
+  the Worker's `NOTICE` variable changes it without republishing the hub).
 - Polling only runs while the chat is on screen (3 s while people talk, 8 s otherwise, backing off when offline).
 - Message text is never parsed as RichText, and names are escaped.
 - Writing your own backend: a transport is a table with `User`, `History`, `Poll`, `Send`, `Delete` (see

@@ -233,6 +233,99 @@ healthy = true
 pump(20)
 check(offline.Status.Text == "Live" and count(offline.Rows) == 1, "the chat recovers by itself")
 
+--// safeguards: kill switch, server info, privacy banner ---------------------------------------------------------------
+local function withInfo(info)
+	local base = UI.ChatTransports.Memory({ Bots = false, Seed = { "x" } })
+	local control = { info = info }
+	function base:Info()
+		return control.info
+	end
+	return base, control
+end
+
+local fakeClock = 1000
+local realClock = os.clock
+os.clock = function()
+	return fakeClock
+end
+
+-- chat turned off by the owner: locked input, clear status, and it wakes up again when switched on
+local offTransport, offControl = withInfo({ Mode = "off" })
+local lockedChat = Tab:Chat({ Transport = offTransport, Notice = false })
+pump(3)
+check(lockedChat.Status.Text == "Disabled", "an owner-disabled chat says Disabled")
+check(lockedChat.Box.TextEditable == false and string.find(lockedChat.Box.PlaceholderText, "turned off", 1, true), "the input is locked")
+lockedChat:Send("hello?")
+check(string.find(lockedChat.Status.Text, "turned off", 1, true), "sending explains why it is locked")
+offControl.info = { Mode = "on" }
+fakeClock = fakeClock + 31 -- the lock is re-checked every 30 s
+pump(6)
+check(lockedChat.Status.Text == "Live" and lockedChat.Box.TextEditable == true, "the chat unlocks by itself when switched back on")
+
+-- read-only: history works, sending is refused
+local roTransport = withInfo({ Mode = "readonly" })
+local readOnly = Tab:Chat({ Transport = roTransport, Notice = false })
+pump(3)
+check(readOnly.Status.Text == "Read-only" and readOnly.Box.TextEditable == false, "read-only locks the input")
+check(count(readOnly.Rows) == 1, "history is still shown")
+
+-- the backend flips to read-only while someone is typing: the refused Send locks the input
+local lateTransport = withInfo({ Mode = "on" })
+function lateTransport:Send()
+	return nil, "Chat is read-only right now", "readonly"
+end
+local late = Tab:Chat({ Transport = lateTransport, Notice = false, Cooldown = 0 })
+pump(3)
+check(late.Box.TextEditable == true, "unlocked while the backend says on")
+late:Send("too late")
+pump(3)
+check(late.Box.TextEditable == false and late.Status.Text ~= "Live", "a readonly refusal locks the input")
+
+-- limits announced by the server tighten the client's own
+local capped = Tab:Chat({ Transport = withInfo({ Mode = "on", MaxLength = 5 }), Notice = false, MaxLength = 200 })
+pump(3)
+capped.Box.Text = "123456789"
+check(#capped.Box.Text == 5, "the server's MaxLength wins when it is smaller")
+
+-- privacy banner
+local banner = Tab:Chat({ Transport = withInfo({ Mode = "on", Notice = "Custom server text.", RetentionHours = 48 }) })
+pump(3)
+check(banner.Notice.Visible, "the privacy banner is shown")
+local bannerText
+for _, child in ipairs(banner.Notice:GetDescendants()) do
+	if child:IsA("TextLabel") and string.find(child.Text, "Custom server text.", 1, true) then
+		bannerText = child.Text
+	end
+end
+check(bannerText and string.find(bannerText, "48 hours", 1, true), "the server's notice and retention are shown: " .. tostring(bannerText))
+local gotIt
+for _, child in ipairs(banner.Notice:GetDescendants()) do
+	if child:IsA("TextButton") then
+		gotIt = child
+	end
+end
+gotIt.MouseButton1Click:Fire()
+check(not banner.Notice.Visible, "Got it hides the banner")
+check(MOCK.files["MugiwaraUI/chat-notice.txt"] == bannerText, "the dismissal is remembered on this device")
+local again = Tab:Chat({ Transport = withInfo({ Mode = "on", Notice = "Custom server text.", RetentionHours = 48 }) })
+pump(3)
+check(not again.Notice.Visible, "a dismissed notice stays hidden")
+local changed = Tab:Chat({ Transport = withInfo({ Mode = "on", Notice = "A different notice." }) })
+pump(3)
+check(changed.Notice.Visible, "a changed notice is shown again")
+check(not Tab:Chat({ Transport = withInfo({ Mode = "on" }), Notice = false }).Notice.Visible, "Notice = false never shows it")
+local ownText = Tab:Chat({ Transport = withInfo({ Mode = "on", Notice = "ignored" }), Notice = "Our own rules." })
+pump(3)
+local ownShown = false
+for _, child in ipairs(ownText.Notice:GetDescendants()) do
+	if child:IsA("TextLabel") and child.Text == "Our own rules." then
+		ownShown = true
+	end
+end
+check(ownShown, "a string Notice overrides the built-in and the server text")
+
+os.clock = realClock
+
 --// destroy ------------------------------------------------------------------------------------------------------
 chat:Destroy()
 pump(3)
@@ -240,10 +333,17 @@ check(not chat.Frame:IsDescendantOf(game), "destroy removes the element and stop
 
 --// Http transport ----------------------------------------------------------------------------------------------
 local calls = {}
+local serverMode = "on"
 request = function(options)
 	table.insert(calls, options)
 	local path = string.match(options.Url, "^https://chat%.example%.com(/v1/%a+)")
 	local body = options.Body and HttpService:JSONDecode(options.Body) or nil
+	if serverMode == "off" and path ~= "/v1/info" then
+		return { StatusCode = 503, Body = HttpService:JSONEncode({ error = "chat_disabled", message = "Chat is turned off right now" }) }
+	end
+	if serverMode == "readonly" and (path == "/v1/send" or path == "/v1/delete") then
+		return { StatusCode = 503, Body = HttpService:JSONEncode({ error = "chat_readonly", message = "Chat is read-only right now" }) }
+	end
 	local payload
 	if path == "/v1/history" then
 		payload = { rev = 7, more = false, messages = { { id = 1, userId = 1001, name = "z", displayName = "Z", text = "hi", time = os.time(), deleted = false } } }
@@ -256,6 +356,8 @@ request = function(options)
 		payload = { rev = 8, message = { id = 2, userId = body.userId, name = body.name, displayName = body.displayName, text = body.text, time = os.time(), deleted = false, replyTo = body.replyTo, replyName = "Z", replyText = "hi" } }
 	elseif path == "/v1/delete" then
 		payload = { ok = true }
+	elseif path == "/v1/info" then
+		payload = { mode = serverMode, maxLength = 150, cooldownMs = 2000, retentionHours = 24, notice = "Be kind.", filter = {} }
 	else
 		return { StatusCode = 404, Body = HttpService:JSONEncode({ error = "not_found", message = "nope" }) }
 	end
@@ -281,6 +383,22 @@ check(limitedSend == nil and limitedReason == "slow down", "server errors surfac
 local second = UI.ChatTransports.Http({ Url = "https://chat.example.com", Folder = "ChatTest" })
 second:Send({ Text = "again" })
 check(HttpService:JSONDecode(calls[#calls].Body).token == token, "the same device token is reused")
+
+-- the owner's kill switch reaches the client as a code, not just an error string
+local info = http:Info()
+check(info.Mode == "on" and info.MaxLength == 150 and info.RetentionHours == 24 and info.Notice == "Be kind." and info.CooldownMs == 2000, "Info maps the server settings")
+serverMode = "readonly"
+check(http:Info().Mode == "readonly", "Info reports read-only")
+local roSend, roReason, roCode = http:Send({ Text = "nope" })
+check(roSend == nil and roCode == "readonly" and string.find(roReason, "read-only", 1, true), "a read-only refusal carries the code")
+check(select(3, http:Delete(2)) == "readonly", "deleting is refused with the same code")
+check(http:History({ Limit = 5 }) ~= nil, "reading still works in read-only mode")
+serverMode = "off"
+local offHistory, offReason, offCode = http:History({ Limit = 5 })
+check(offHistory == nil and offCode == "disabled" and string.find(offReason, "turned off", 1, true), "an off switch carries the disabled code")
+check(select(3, http:Poll(1)) == "disabled", "polling reports disabled too")
+check(http:Info().Mode == "off", "Info still answers while the chat is off")
+serverMode = "on"
 
 request = nil
 local offlineTransport = UI.ChatTransports.Http({ Url = "https://chat.example.com", Folder = "ChatTest" })
