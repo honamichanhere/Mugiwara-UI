@@ -2,12 +2,25 @@
 
 A glass + neon UI library for Roblox script hubs, themed after Luffy's **Gear 5**: black glass, white → gold → orange → red gradients and a rotating neon border. Pure Luau, one file, no image assets.
 
-> Status: **v0.1 (beta)**. The logic is covered by a smoke test, but the visuals still need tuning on real executors. Open an issue with a screenshot if something looks off.
+> Status: **beta**. Logic is covered by automated tests; the visuals are checked by hand on real executors. Open an issue with a screenshot if something looks off.
+
+**Documentation:** this README is the full reference · [CHANGELOG.md](CHANGELOG.md) what changed in each version · [server/worker/README.md](server/worker/README.md) the chat backend · [CLAUDE.md](CLAUDE.md) the project guide for AI-assisted sessions (architecture, rules learned, decisions).
+
+## Install
+
+Load a **pinned version** (recommended). A tag never changes, so a later push cannot break the hubs that use it:
+
+```lua
+local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.6.1/dist/main.lua"))()
+```
+
+`.../main/dist/main.lua` always serves the newest build (GitHub caches it for about 5 minutes). Available tags are listed in the
+[CHANGELOG](CHANGELOG.md).
 
 ## Quick start
 
 ```lua
-local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/main/dist/main.lua"))()
+local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.6.1/dist/main.lua"))()
 
 local Window = MugiwaraUI:CreateWindow({
     Title = "Mugiwara Hub",
@@ -92,12 +105,17 @@ Methods: `SetStatus(text)`, `SetProgress(target, cap)`, `Log(text, "info"|"ok"|"
 
 | Call | Description |
 | --- | --- |
-| `MugiwaraUI:CreateWindow(opts)` | Creates a window |
-| `MugiwaraUI:Notify(opts)` | Toast: `Title`, `Content`, `Duration` (0 = sticky), `Type` (`info`/`success`/`warning`/`error`) |
+| `MugiwaraUI:CreateWindow(opts)` | Creates a window (options below) |
+| `MugiwaraUI:KeySystem(opts)` | Key UI card, see "The flow" |
+| `MugiwaraUI:Loading(opts)` | Loading UI card, see "The flow" |
+| `MugiwaraUI:Notify(opts)` | Toast: `Title`, `Content`, `Duration` (seconds, 0 = sticky), `Type` (`info`/`success`/`warning`/`error`); at most 6 on screen |
 | `MugiwaraUI:SetTheme(name)` / `GetTheme()` / `GetThemes()` | Switch themes live |
 | `MugiwaraUI:AddTheme(name, tokens)` | Register a theme (see below) |
+| `MugiwaraUI:SetIconSet(name)` / `PreloadIcons(...)` | Default icon set / download sets in the background |
 | `MugiwaraUI.Icons.Register({ name = "rbxassetid://..." })` | Register icons usable as `Icon = "name"` |
-| `MugiwaraUI:Destroy()` | Remove every window |
+| `MugiwaraUI.ChatTransports` | `Http` and `Memory` transports for `tab:Chat` |
+| `MugiwaraUI.Version`, `MugiwaraUI.Compat` | Library version; executor helpers (`Executor`, `FilesSupported`, `SetClipboard`...) |
+| `MugiwaraUI:Destroy()` | Remove every window, loader, key card and toast |
 
 ### Window options
 
@@ -109,7 +127,9 @@ Methods: `SetStatus(text)`, `SetProgress(target, cap)`, `Log(text, "info"|"ok"|"
 | `Background` | none | Wallpaper: `"rbxassetid://..."` or `{ Image, Transparency, Dim }` |
 | `Icon` | letter badge | Asset id / registered icon |
 | `Size` | `640x430` | `UDim2.fromOffset(w, h)` |
-| `MinSize`, `MaxSize` | `470x320`, `1000x760` | Resize limits |
+| `MinSize`, `MaxSize` | `480x340`, `1000x760` | Resize limits |
+| `Theme` | `"Gear 5"` | Starting theme name |
+| `OnDestroy` | none | Function called when the window is destroyed |
 | `Resizable` | `true` | Bottom-right grip |
 | `Folder` | `"MugiwaraUI"` | Workspace folder for configs |
 | `ToggleKey` | `Enum.KeyCode.RightShift` | |
@@ -119,6 +139,8 @@ Methods: `SetStatus(text)`, `SetProgress(target, cap)`, `Log(text, "info"|"ok"|"
 | `ConfirmClose` | `true` | Ask before the X button destroys the UI |
 | `ShowUser` | `true` | Avatar chip in the sidebar |
 | `SideBarWidth` | `176` (`150` on mobile) | |
+
+Dialogs: `Window:Dialog({ Title, Content, Buttons = { { Title, Style = "Primary" | "Secondary" | "Danger", Callback } } })`.
 
 Window methods: `Tab`, `TabSection`, `SelectTab`, `SidebarLabel`, `SidebarDivider`, `Dialog`, `Notify`, `SetTitle`, `SetVersion`, `SetTheme`, `OpenThemeMenu`, `SetBackground`, `SetBlur`, `SetScale`, `SetToggleKey`, `SetMaximized`, `ToggleMaximized`, `Open`, `Close`, `Toggle`, `Destroy`, `SaveConfig`, `LoadConfig`, `DeleteConfig`, `GetConfigs`, `LoadAutoConfig`, `ConfigSection`.
 
@@ -220,7 +242,7 @@ local chat = tab:Chat({
 
 Click a message to Reply / Copy / Delete (your own) / Mute (someone else's). Options: `Height`, `MaxLength` (200),
 `Cooldown` (1.5 s between sends), `History` (messages per page, 50), `PollInterval` (3 s while people talk),
-`IdlePollInterval` (8 s), `BackgroundPoll`, `Placeholder`, `OnMessage(message)`.
+`IdlePollInterval` (8 s), `BackgroundPoll`, `Placeholder`, `OnMessage(message)` (called one at a time, `NotifySpacing` seconds apart (0.8), and only for the newest `NotifyLimit` (5) messages of a burst; never for muted users).
 Methods: `Send(text)`, `Refresh()`, `Clear()`, `Mute(userId)`, `Unmute(userId)`, `GetMuted()`, `GetMessages()`.
 
 Things to know:
@@ -293,13 +315,13 @@ Other differences to check when porting: config saving goes through `Flag` + `Wi
 
 ## Executor notes
 
-Developed against the common executors (Delta, Xeno, Solara and similar). Only these are used, each optional: `gethui`, `cloneref`, `identifyexecutor`, `writefile`/`readfile`/`isfile`/`makefolder`/`isfolder`/`delfile`, `setclipboard`. Without file functions the UI works and config saving reports that it is unavailable. GUI parent order is `gethui()` → `CoreGui` → `PlayerGui`.
+Developed against the common executors (Delta, Xeno, Solara and similar). Every executor function is optional and guarded: `gethui`, `cloneref`, `identifyexecutor`, `loadstring`, `game:HttpGet`, `request`, `writefile`/`readfile`/`isfile`/`makefolder`/`isfolder`/`delfile`, `setclipboard`/`getclipboard`, `getcustomasset`. Without file functions the UI works, but configs, saved keys, cached icons and the chat device token are unavailable (each reports it or falls back). Without `request`, the chat shows Offline. GUI parent order is `gethui()` → `CoreGui` → `PlayerGui`.
 
 ## Development
 
 ```bash
 npm install
-npm test        # build + static check + smoke test
+npm test        # build + static check + Lua tests + chat Worker tests
 npm run build   # bundle src/ into dist/main.lua
 ```
 
@@ -308,7 +330,7 @@ npm run build   # bundle src/ into dist/main.lua
 - `tests/` — Roblox API mock + smoke / flow / chat tests (Lua 5.3 via fengari; checks logic, not rendering)
 - `server/worker/` — the chat backend (Cloudflare Worker + D1) and its tests
 
-Commit `dist/main.lua` after building: that file is what `loadstring` fetches.
+Commit `dist/main.lua` after building: that file is what `loadstring` fetches. Releases are git tags (see [CLAUDE.md](CLAUDE.md#releasing)).
 
 ## Credits
 
