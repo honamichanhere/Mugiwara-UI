@@ -1,0 +1,291 @@
+--// Base: shared building blocks for every element (glass card, gradient helper,
+--// expandable drawer, flag registration).
+
+local Utility = Import("core/Utility")
+
+local Create, Tween = Utility.Create, Utility.Tween
+local WHITE = Color3.new(1, 1, 1)
+
+local Base = {}
+
+--// Element: common methods every control inherits ---------------------------
+local Element = {}
+Element.__index = Element
+
+function Element:SetTitle(text)
+	self.TitleLabel.Text = text or ""
+	self.TitleLabel.Visible = text ~= nil and text ~= ""
+end
+
+function Element:SetDesc(text)
+	self.DescLabel.Text = text or ""
+	self.DescLabel.Visible = text ~= nil and text ~= ""
+end
+
+function Element:SetVisible(visible)
+	self.Frame.Visible = visible
+end
+
+function Element:Lock(state)
+	self.Locked = state ~= false
+	self.LockOverlay.Visible = self.Locked
+end
+
+function Element:Unlock()
+	self:Lock(false)
+end
+
+function Element:Get()
+	return self.Value
+end
+
+function Element:Destroy()
+	if self.Flag then
+		self.Window.Flags[self.Flag] = nil
+	end
+	self.Maid:Clean()
+	self.Frame:Destroy()
+end
+
+--// Gradient bound to the theme -------------------------------------------------
+-- kind: "GradientSeq" (default, static) or "CycleSeq" (seamless when rotating)
+function Base.Gradient(theme, parent, rotation, kind)
+	local gradient = Create("UIGradient", { Rotation = rotation or 0, Parent = parent })
+	theme:Bind(gradient, { Color = kind or "GradientSeq" })
+	return gradient
+end
+
+-- Dark inset field used by inputs, dropdown buttons and so on.
+function Base.Field(theme, parent, size, position)
+	local field = Create("Frame", {
+		Size = size or UDim2.fromScale(1, 1),
+		Position = position or UDim2.new(),
+		BackgroundColor3 = Color3.new(0, 0, 0),
+		Parent = parent,
+	})
+	Utility.Corner(field, 8)
+	local stroke = Utility.Stroke(field, WHITE, 0.9, 1)
+	theme:Bind(field, { BackgroundColor3 = "Field", BackgroundTransparency = "FieldAlpha" })
+	theme:Bind(stroke, { Color = "Stroke", Transparency = "StrokeAlpha" })
+	return field, stroke
+end
+
+--// Card -------------------------------------------------------------------------
+-- Builds the glass row every element lives in. `rightWidth`/`rightHeight` reserve a
+-- control slot on the right (el.Right); pass nil for text-only rows.
+function Base.Card(container, opts, rightWidth, rightHeight)
+	opts = opts or {}
+	local window = container.Window
+	local theme = window.Theme
+
+	local el = setmetatable({
+		Container = container,
+		Window = window,
+		Options = opts,
+		Maid = Utility.Maid.new(),
+		Locked = false,
+	}, Element)
+
+	local frame = Create("Frame", {
+		Name = opts.Title or "Element",
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundColor3 = WHITE,
+		LayoutOrder = container:NextOrder(),
+		Parent = container.Holder,
+	})
+	Utility.Corner(frame, 10)
+	local stroke = Utility.Stroke(frame, WHITE, 0.9, 1)
+	theme:Bind(frame, { BackgroundColor3 = "Card", BackgroundTransparency = "CardAlpha" })
+	theme:Bind(stroke, { Color = "Stroke", Transparency = "StrokeAlpha" })
+
+	local content = Create("Frame", {
+		Name = "Content",
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		Parent = frame,
+	})
+	Utility.Padding(content, 11, 11, 14, 14)
+	Utility.List(content, 0)
+
+	local top = Create("TextButton", {
+		Name = "Top",
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		LayoutOrder = 1,
+		Parent = content,
+	})
+	Create("UISizeConstraint", { MinSize = Vector2.new(0, rightHeight or 24), Parent = top })
+	Utility.List(top, 10, Enum.FillDirection.Horizontal, nil, Enum.VerticalAlignment.Center)
+
+	local reserved = rightWidth and (rightWidth + 10) or 0
+	local info = Create("Frame", {
+		Name = "Info",
+		Size = UDim2.new(1, -reserved, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		LayoutOrder = 1,
+		Parent = top,
+	})
+	Utility.List(info, 2)
+
+	local title = Create("TextLabel", {
+		Name = "Title",
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Text = opts.Title or "",
+		Font = Enum.Font.GothamMedium,
+		TextSize = 14,
+		TextWrapped = true,
+		RichText = true,
+		Visible = opts.Title ~= nil and opts.Title ~= "",
+		LayoutOrder = 1,
+		Parent = info,
+	})
+	theme:Bind(title, { TextColor3 = "Text" })
+
+	local desc = Create("TextLabel", {
+		Name = "Desc",
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Text = opts.Desc or "",
+		Font = Enum.Font.Gotham,
+		TextSize = 12,
+		TextWrapped = true,
+		RichText = true,
+		Visible = opts.Desc ~= nil and opts.Desc ~= "",
+		LayoutOrder = 2,
+		Parent = info,
+	})
+	theme:Bind(desc, { TextColor3 = "SubText" })
+
+	if rightWidth then
+		el.Right = Create("Frame", {
+			Name = "Right",
+			Size = UDim2.fromOffset(rightWidth, rightHeight or 24),
+			BackgroundTransparency = 1,
+			LayoutOrder = 2,
+			Parent = top,
+		})
+	end
+
+	local lock = Create("TextButton", {
+		Name = "Lock",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.new(0, 0, 0),
+		BackgroundTransparency = 0.5,
+		Visible = false,
+		ZIndex = 10,
+		Parent = frame,
+	})
+	Utility.Corner(lock, 10)
+
+	el.Frame = frame
+	el.Content = content
+	el.Top = top
+	el.TitleLabel = title
+	el.DescLabel = desc
+	el.LockOverlay = lock
+
+	el.Maid:Give(top.MouseEnter:Connect(function()
+		if not el.Locked then
+			Tween(frame, { BackgroundTransparency = theme.Tokens.CardHoverAlpha }, 0.15)
+		end
+	end))
+	el.Maid:Give(top.MouseLeave:Connect(function()
+		Tween(frame, { BackgroundTransparency = theme.Tokens.CardAlpha }, 0.2)
+	end))
+
+	return el
+end
+
+--// Drawers ----------------------------------------------------------------------
+-- Fixed-height strip under the title row (slider bar, textarea...).
+function Base.Extra(el, height)
+	local extra = Create("Frame", {
+		Name = "Extra",
+		Size = UDim2.new(1, 0, 0, height + 10),
+		BackgroundTransparency = 1,
+		LayoutOrder = 2,
+		Parent = el.Content,
+	})
+	Utility.Padding(extra, 10, 0, 0, 0)
+	return extra
+end
+
+-- Collapsible area under the title row (dropdown list, color picker...).
+function Base.Expandable(el)
+	local extra = Create("Frame", {
+		Name = "Drawer",
+		Size = UDim2.new(1, 0, 0, 0),
+		BackgroundTransparency = 1,
+		ClipsDescendants = true,
+		LayoutOrder = 2,
+		Parent = el.Content,
+	})
+	Utility.Padding(extra, 10, 0, 0, 0)
+	local layout = Utility.List(extra, 8)
+
+	local drawer = { Frame = extra, Layout = layout, Open = false }
+
+	-- Sums the children's fixed pixel heights instead of reading AbsoluteContentSize,
+	-- which is reported in screen pixels and drifts when the window is scaled down.
+	local function contentHeight()
+		local total, count = 0, 0
+		for _, child in ipairs(extra:GetChildren()) do
+			if child:IsA("GuiObject") and child.Visible then
+				total = total + child.Size.Y.Offset
+				count = count + 1
+			end
+		end
+		return total + math.max(count - 1, 0) * layout.Padding.Offset
+	end
+
+	function drawer:Update(animate)
+		local height = 0
+		if self.Open then
+			height = contentHeight() + 10
+		end
+		local size = UDim2.new(1, 0, 0, height)
+		if animate == false then
+			extra.Size = size
+		else
+			Tween(extra, { Size = size }, 0.28)
+		end
+	end
+
+	function drawer:Set(open, animate)
+		self.Open = open
+		self:Update(animate)
+	end
+
+	function drawer:Toggle()
+		self:Set(not self.Open)
+	end
+
+	el.Maid:Give(layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+		if drawer.Open then
+			drawer:Update(false)
+		end
+	end))
+
+	return drawer
+end
+
+--// Registration -----------------------------------------------------------------
+-- Call last in every element constructor.
+function Base.Finish(container, el, opts, kind)
+	el.Type = kind
+	if opts.Flag then
+		el.Flag = opts.Flag
+		container.Window.Flags[opts.Flag] = el
+	end
+	if opts.Locked then
+		el:Lock(true)
+	end
+	table.insert(container.Elements, el)
+	return el
+end
+
+return Base

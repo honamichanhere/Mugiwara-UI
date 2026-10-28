@@ -1,0 +1,18 @@
+{
+  "name": "mugiwara-ui",
+  "version": "0.1.0",
+  "description": "Glass + neon Gear 5 themed UI library for Roblox script hubs (Luau).",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build/build.mjs",
+    "check": "node build/check.mjs",
+    "smoke": "node tests/smoke.mjs",
+    "test": "node build/build.mjs && node build/check.mjs && node tests/smoke.mjs"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "fengari": "^0.1.5",
+    "luaparse": "^0.3.1"
+  }
+}
