@@ -125,6 +125,26 @@ tab:Divider({ Title })                     -- Title optional
 tab:Section({ Title, Opened })             -- returns a container; section:SetOpen(bool)
 ```
 
+### Icons
+
+Tabs, the window logo and every element accept an `Icon`:
+
+```lua
+local Window = MugiwaraUI:CreateWindow({ Title = "Hub", Icon = "lucide:sun" })
+local Farm = Window:Tab({ Title = "Farm", Icon = "swords" })        -- default set is lucide
+Farm:Toggle({ Title = "Auto Farm", Icon = "lucide:flame" })
+Farm:Button({ Title = "Open", Icon = "craft:folder-stroke" })       -- "set:name"
+local el = Farm:Label({ Title = "Dynamic", Icon = "solar:crown-bold" })
+el:SetIcon("geist:bell")                                            -- returns false if the icon was not found
+```
+
+- Sets: `lucide` (default), `craft`, `geist`, `gravity`, `solar`. Change the default with `MugiwaraUI:SetIconSet("craft")`.
+- Plain asset ids (`"rbxassetid://123"`, `123`) and names added with `MugiwaraUI.Icons.Register({ name = id })` also work; those are drawn in their own colors.
+- The icon data is **not bundled**. It comes from [Footagesus/Icons](https://github.com/Footagesus/Icons) (MIT) and is loaded per set the first time one of its icons is used (Lucide is about 85 KB, Solar about 440 KB), then cached in `MugiwaraUI/cache` in the executor workspace. Use `MugiwaraUI:PreloadIcons("lucide", "solar")` to fetch in the background.
+- The download is **pinned to a single commit**, so a later push to that repository cannot change what runs on your users' machines. Bump `COMMIT` in [`src/core/IconSets.lua`](src/core/IconSets.lua) to update.
+- If a set cannot be downloaded, tabs fall back to a letter badge and elements simply show no icon.
+- `sfsymbols` exists upstream but is intentionally disabled: Apple's license only allows SF Symbols in apps for Apple platforms.
+
 ### Background images
 
 Two options, both optional:
@@ -181,6 +201,16 @@ npm run build   # bundle src/ into dist/main.lua
 Commit `dist/main.lua` after building: that file is what `loadstring` fetches.
 
 ## Credits
+
+Icons are loaded from [Footagesus/Icons](https://github.com/Footagesus/Icons) (MIT, Copyright (c) 2025 Footages), which converts these upstream sets. Their licenses apply to the icons themselves:
+
+| Set | Upstream | License |
+| --- | --- | --- |
+| Lucide | [lucide-icons/lucide](https://github.com/lucide-icons/lucide) | ISC |
+| Gravity UI | [gravity-ui/icons](https://gravity-ui.com/icons) | MIT |
+| Solar | [480 Design](https://icones.js.org/collection/solar) | CC BY 4.0 (attribution required) |
+| Geist | [Vercel Geist](https://vercel.com/geist/icons) | check upstream |
+| Craft | [Figma community file](https://www.figma.com/community/file/1415718327120418204) | check upstream |
 
 The API shape is inspired by [WindUI](https://github.com/Footagesus/WindUI) by Footagesus (MIT). Mugiwara UI is a from-scratch implementation with its own design and code.
 

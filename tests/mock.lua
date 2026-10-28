@@ -408,7 +408,19 @@ MOCK.files = files
 loadstring = function(source)
 	return load(source, "=chunk")
 end
-game.HttpGet = function()
+-- fake Footagesus/Icons: a flat set (lucide) and spritesheet sets (craft, geist with Parts)
+ICON_SOURCES = {
+	lucide = 'return { ["house"] = "rbxassetid://111", ["settings"] = "rbxassetid://222" }',
+	craft = 'return { Spritesheets = { ["1"] = "rbxassetid://5" }, Icons = { ["folder-stroke"] = { Image = 1, ImageRectPosition = Vector2.new(96, 0), ImageRectSize = Vector2.new(96, 96) } } }',
+	geist = 'return { Spritesheets = { ["1"] = "rbxassetid://7" }, Icons = { bell = { Image = 1, ImageRectPosition = Vector2.new(0, 0), ImageRectSize = Vector2.new(128, 128), Parts = { [1] = "bell2" } }, bell2 = { Image = 1, ImageRectPosition = Vector2.new(128, 0), ImageRectSize = Vector2.new(128, 128) } } }',
+}
+HTTP_LOG = {}
+game.HttpGet = function(_, url)
+	local set = string.match(url, "/(%w+)/dist/Icons%.lua$")
+	if set then
+		table.insert(HTTP_LOG, url)
+		return ICON_SOURCES[set] or error("404 " .. url)
+	end
 	return DIST_SOURCE
 end
 

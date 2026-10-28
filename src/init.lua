@@ -2,6 +2,7 @@
 
 local Compat = Import("core/Compat")
 local Icons = Import("core/Icons")
+local IconSets = Import("core/IconSets")
 local Theme = Import("core/Theme")
 local Window = Import("components/Window")
 local Notification = Import("components/Notification")
@@ -19,6 +20,7 @@ local Library = {
 	Windows = {},
 	Theme = Theme.new("Gear5"),
 	Icons = Icons,
+	IconSets = IconSets,
 	Compat = Compat,
 }
 
@@ -45,6 +47,16 @@ end
 -- Library:AddTheme("Mine", { Accent = Color3..., Gradient = { Color3... } })
 function Library:AddTheme(name, tokens)
 	self.Theme:Add(name, tokens)
+end
+
+-- Default icon set for names without a prefix ("house" vs "lucide:house"): lucide, craft, geist, gravity, solar
+function Library:SetIconSet(name)
+	return IconSets.SetDefault(name)
+end
+
+-- Downloads icon sets ahead of time (in the background) so the first icons do not wait on the network.
+function Library:PreloadIcons(...)
+	IconSets.Preload({ ... })
 end
 
 function Library:Destroy()

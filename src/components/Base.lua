@@ -3,6 +3,7 @@
 
 local Utility = Import("core/Utility")
 local Compat = Import("core/Compat")
+local Icons = Import("core/Icons")
 
 local Create, Tween = Utility.Create, Utility.Tween
 local WHITE = Color3.new(1, 1, 1)
@@ -21,6 +22,11 @@ end
 function Element:SetDesc(text)
 	self.DescLabel.Text = text or ""
 	self.DescLabel.Visible = text ~= nil and text ~= ""
+end
+
+-- icon: asset id or icon-set name ("lucide:house"); nil removes it. Returns false when it was not found.
+function Element:SetIcon(icon)
+	return self._applyIcon(icon)
 end
 
 function Element:SetVisible(visible)
@@ -190,6 +196,37 @@ function Base.Card(container, opts, rightWidth, rightHeight)
 		Parent = info,
 	})
 	theme:Bind(desc, { TextColor3 = "SubText" })
+
+	-- optional icon before the title (opts.Icon); the text column shrinks by the icon's width
+	local iconHolder, iconLabel
+	local function applyIcon(icon)
+		if iconLabel then
+			iconLabel:Destroy()
+			iconLabel = nil
+		end
+		if icon ~= nil and icon ~= "" then
+			if not iconHolder then
+				iconHolder = Create("Frame", {
+					Name = "IconHolder",
+					Size = UDim2.fromOffset(22, 22),
+					BackgroundTransparency = 1,
+					LayoutOrder = 0,
+					Parent = top,
+				})
+			end
+			iconLabel = Icons.Create(icon, iconHolder)
+			if iconLabel then
+				Icons.BindImage(theme, iconLabel, "Accent")
+			end
+		end
+		if iconHolder then
+			iconHolder.Visible = iconLabel ~= nil
+		end
+		info.Size = UDim2.new(1, -(reserved + (iconLabel and 32 or 0)), 0, 0)
+		return iconLabel ~= nil or icon == nil or icon == ""
+	end
+	el._applyIcon = applyIcon
+	applyIcon(opts.Icon)
 
 	if rightWidth then
 		el.Right = Create("Frame", {

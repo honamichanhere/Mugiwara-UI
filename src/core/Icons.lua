@@ -2,6 +2,7 @@
 --// (chevron, check, close...) never depend on uploaded images.
 
 local Utility = Import("core/Utility")
+local IconSets = Import("core/IconSets")
 
 local Create = Utility.Create
 
@@ -164,11 +165,55 @@ function Icons.SetColor(glyph, color)
 	end)
 end
 
--- Empties a glyph holder so another shape can be drawn into the same slot.
-function Icons.Clear(glyph)
-	for _, child in ipairs(glyph:GetChildren()) do
-		child:Destroy()
+--// Image icons -----------------------------------------------------------------
+-- Fills `parent` with an ImageLabel for:
+--   * an asset id / rbxassetid / registered name -> full color image
+--   * a Footagesus icon ("house", "lucide:house", "craft:folder-stroke") -> monochrome, tintable
+-- Returns label, isMonochrome; nil when the icon cannot be found (unknown name, offline...).
+function Icons.Create(icon, parent)
+	if icon == nil or icon == "" then
+		return nil
 	end
+
+	local direct = Icons.Resolve(icon)
+	if direct then
+		return Create("ImageLabel", { Name = "Icon", Size = UDim2.fromScale(1, 1), Image = direct, Parent = parent }), false
+	end
+
+	local descriptor = IconSets.Get(icon)
+	if not descriptor then
+		return nil
+	end
+	local label = Create("ImageLabel", { Name = "Icon", Size = UDim2.fromScale(1, 1), Parent = parent })
+	IconSets.Apply(label, descriptor)
+	return label, true
+end
+
+-- Tints an icon and its extra layers; pass a duration to animate.
+function Icons.Tint(label, color, duration)
+	local function paint(target)
+		if duration then
+			Utility.Tween(target, { ImageColor3 = color }, duration)
+		else
+			target.ImageColor3 = color
+		end
+	end
+	paint(label)
+	for _, child in ipairs(label:GetChildren()) do
+		if child:IsA("ImageLabel") then
+			paint(child)
+		end
+	end
+end
+
+function Icons.BindImage(theme, label, token)
+	theme:Bind(label, { ImageColor3 = token })
+	for _, child in ipairs(label:GetChildren()) do
+		if child:IsA("ImageLabel") then
+			theme:Bind(child, { ImageColor3 = token })
+		end
+	end
+	return label
 end
 
 return Icons

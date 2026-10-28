@@ -66,15 +66,10 @@ return function(window, opts, parent)
 		BackgroundTransparency = 1,
 		Parent = button,
 	})
-	local image = Icons.Resolve(opts.Icon)
-	local iconImage, iconLetter
-	if image then
-		iconImage = Create("ImageLabel", {
-			Size = UDim2.fromScale(1, 1),
-			Image = image,
-			ImageColor3 = theme.Tokens.SubText,
-			Parent = iconBox,
-		})
+	local iconImage, iconLetter = Icons.Create(opts.Icon, iconBox), nil
+	if iconImage then
+		Icons.Tint(iconImage, theme.Tokens.SubText)
+		self.IconLabel = iconImage
 	else
 		iconLetter = Create("TextLabel", {
 			Size = UDim2.fromScale(1, 1),
@@ -112,7 +107,7 @@ return function(window, opts, parent)
 		Tween(indicator, { Size = UDim2.fromOffset(3, state and 18 or 0) }, 0.3, Enum.EasingStyle.Back)
 		Tween(label, { TextColor3 = tint }, 0.2)
 		if iconImage then
-			Tween(iconImage, { ImageColor3 = tint }, 0.2)
+			Icons.Tint(iconImage, tint, 0.2)
 		else
 			Tween(iconLetter, { TextColor3 = tint }, 0.2)
 		end
@@ -136,7 +131,7 @@ return function(window, opts, parent)
 		local tint = self.Selected and tokens.Text or tokens.SubText
 		label.TextColor3 = tint
 		if iconImage then
-			iconImage.ImageColor3 = tint
+			Icons.Tint(iconImage, tint)
 		else
 			iconLetter.TextColor3 = tint
 		end

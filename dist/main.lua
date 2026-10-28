@@ -1,4 +1,4 @@
--- Mugiwara UI v0.2.2
+-- Mugiwara UI v0.3.0
 -- Glass + neon Gear 5 UI library for Roblox script hubs.
 -- https://github.com/honamichanhere/Mugiwara-UI  |  MIT License
 
@@ -24,6 +24,7 @@ __modules["components/Base"] = function(Import)
 
 local Utility = Import("core/Utility")
 local Compat = Import("core/Compat")
+local Icons = Import("core/Icons")
 
 local Create, Tween = Utility.Create, Utility.Tween
 local WHITE = Color3.new(1, 1, 1)
@@ -42,6 +43,11 @@ end
 function Element:SetDesc(text)
 	self.DescLabel.Text = text or ""
 	self.DescLabel.Visible = text ~= nil and text ~= ""
+end
+
+-- icon: asset id or icon-set name ("lucide:house"); nil removes it. Returns false when it was not found.
+function Element:SetIcon(icon)
+	return self._applyIcon(icon)
 end
 
 function Element:SetVisible(visible)
@@ -211,6 +217,37 @@ function Base.Card(container, opts, rightWidth, rightHeight)
 		Parent = info,
 	})
 	theme:Bind(desc, { TextColor3 = "SubText" })
+
+	-- optional icon before the title (opts.Icon); the text column shrinks by the icon's width
+	local iconHolder, iconLabel
+	local function applyIcon(icon)
+		if iconLabel then
+			iconLabel:Destroy()
+			iconLabel = nil
+		end
+		if icon ~= nil and icon ~= "" then
+			if not iconHolder then
+				iconHolder = Create("Frame", {
+					Name = "IconHolder",
+					Size = UDim2.fromOffset(22, 22),
+					BackgroundTransparency = 1,
+					LayoutOrder = 0,
+					Parent = top,
+				})
+			end
+			iconLabel = Icons.Create(icon, iconHolder)
+			if iconLabel then
+				Icons.BindImage(theme, iconLabel, "Accent")
+			end
+		end
+		if iconHolder then
+			iconHolder.Visible = iconLabel ~= nil
+		end
+		info.Size = UDim2.new(1, -(reserved + (iconLabel and 32 or 0)), 0, 0)
+		return iconLabel ~= nil or icon == nil or icon == ""
+	end
+	el._applyIcon = applyIcon
+	applyIcon(opts.Icon)
 
 	if rightWidth then
 		el.Right = Create("Frame", {
@@ -1060,15 +1097,10 @@ return function(window, opts, parent)
 		BackgroundTransparency = 1,
 		Parent = button,
 	})
-	local image = Icons.Resolve(opts.Icon)
-	local iconImage, iconLetter
-	if image then
-		iconImage = Create("ImageLabel", {
-			Size = UDim2.fromScale(1, 1),
-			Image = image,
-			ImageColor3 = theme.Tokens.SubText,
-			Parent = iconBox,
-		})
+	local iconImage, iconLetter = Icons.Create(opts.Icon, iconBox), nil
+	if iconImage then
+		Icons.Tint(iconImage, theme.Tokens.SubText)
+		self.IconLabel = iconImage
 	else
 		iconLetter = Create("TextLabel", {
 			Size = UDim2.fromScale(1, 1),
@@ -1106,7 +1138,7 @@ return function(window, opts, parent)
 		Tween(indicator, { Size = UDim2.fromOffset(3, state and 18 or 0) }, 0.3, Enum.EasingStyle.Back)
 		Tween(label, { TextColor3 = tint }, 0.2)
 		if iconImage then
-			Tween(iconImage, { ImageColor3 = tint }, 0.2)
+			Icons.Tint(iconImage, tint, 0.2)
 		else
 			Tween(iconLetter, { TextColor3 = tint }, 0.2)
 		end
@@ -1130,7 +1162,7 @@ return function(window, opts, parent)
 		local tint = self.Selected and tokens.Text or tokens.SubText
 		label.TextColor3 = tint
 		if iconImage then
-			iconImage.ImageColor3 = tint
+			Icons.Tint(iconImage, tint)
 		else
 			iconLetter.TextColor3 = tint
 		end
@@ -1524,11 +1556,29 @@ function Window.new(library, opts)
 		Parent = topbar,
 	})
 	Utility.Corner(brand, 9)
-	local logo = Icons.Resolve(opts.Icon)
-	if logo then
-		Create("ImageLabel", { Size = UDim2.fromScale(1, 1), Image = logo, Parent = brand })
-		brand.BackgroundTransparency = 1
-	else
+	-- Icon: asset id (full color logo) or an icon-set name such as "lucide:sun" (tinted on the gradient badge)
+	local logo, monochrome
+	if opts.Icon then
+		local slot = Create("Frame", {
+			Name = "Logo",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			Parent = brand,
+		})
+		logo, monochrome = Icons.Create(opts.Icon, slot)
+		if not logo then
+			slot:Destroy()
+		elseif monochrome then
+			slot.Size = UDim2.fromOffset(18, 18)
+			Base.Gradient(theme, brand, 45)
+			Icons.BindImage(theme, logo, "OnAccent")
+		else
+			brand.BackgroundTransparency = 1
+		end
+	end
+	if not logo then
 		Base.Gradient(theme, brand, 45)
 		local letter = Create("TextLabel", {
 			Size = UDim2.fromScale(1, 1),
@@ -4133,6 +4183,25 @@ function Compat.ImageLoaded(label)
 	return nil
 end
 
+--// HTTP -----------------------------------------------------------------------
+-- Plain GET for executors: game:HttpGet first, request() as a fallback. Returns the body or nil.
+function Compat.HttpGet(url)
+	local ok, body = pcall(function()
+		return game:HttpGet(url)
+	end)
+	if ok and type(body) == "string" and body ~= "" then
+		return body
+	end
+	local requester = request or http_request or (syn and syn.request)
+	if requester then
+		local response = try(requester, { Url = url, Method = "GET" })
+		if response and type(response.Body) == "string" and (response.StatusCode == nil or response.StatusCode == 200) then
+			return response.Body
+		end
+	end
+	return nil
+end
+
 --// Clipboard -----------------------------------------------------------------
 function Compat.SetClipboard(text)
 	local setter = setclipboard or toclipboard or (Clipboard and Clipboard.set)
@@ -4278,11 +4347,212 @@ end
 return Config
 end
 
+__modules["core/IconSets"] = function(Import)
+--// IconSets: icons from the Footagesus/Icons collection (https://github.com/Footagesus/Icons, MIT).
+--//
+--// Nothing is bundled. A set (a few hundred KB of asset ids) is downloaded the first time one of its
+--// icons is used, then cached in the executor workspace so later runs work offline.
+--// The download is pinned to one commit: a raw URL for a commit never changes, so the code that
+--// gets executed on users' machines cannot be swapped by a later push to that repository.
+
+local Compat = Import("core/Compat")
+local Utility = Import("core/Utility")
+
+local REPO = "Footagesus/Icons"
+local COMMIT = "46d30c19ba7bc601d6ec794a48dc3a89568b1eec"
+local CACHE_DIR = "MugiwaraUI/cache"
+local RETRY_AFTER = 30 -- seconds before a failed download is attempted again
+
+local IconSets = {}
+
+IconSets.Default = "lucide"
+
+-- "sfsymbols" exists in that repository but is left out on purpose: Apple's license only
+-- allows SF Symbols in apps for Apple platforms.
+IconSets.Available = { "lucide", "craft", "geist", "gravity", "solar" }
+
+local allowed = {}
+for _, name in ipairs(IconSets.Available) do
+	allowed[name] = true
+end
+
+-- loaded sets live on the executor environment so re-running the script does not download again
+local store = Compat.Env.__MugiwaraIconSets
+if not store then
+	store = {}
+	Compat.Env.__MugiwaraIconSets = store
+end
+local failedAt = {}
+
+local function sourceUrl(set)
+	return string.format("https://raw.githubusercontent.com/%s/%s/%s/dist/Icons.lua", REPO, COMMIT, set)
+end
+
+local function cachePath(set)
+	return string.format("%s/icons-%s-%s.lua", CACHE_DIR, set, string.sub(COMMIT, 1, 8))
+end
+
+-- A set file is a Lua table of data only (asset ids and Vector2 values).
+local function readSet(set)
+	local path = cachePath(set)
+	local source = Compat.ReadFile(path)
+	local fromCache = source ~= nil
+	if not source then
+		source = Compat.HttpGet(sourceUrl(set))
+	end
+	if not source or not loadstring then
+		return nil
+	end
+
+	local compiled = loadstring(source)
+	local ok, data = false, nil
+	if compiled then
+		ok, data = pcall(compiled)
+	end
+	if not ok or type(data) ~= "table" then
+		if fromCache then
+			Compat.DeleteFile(path) -- corrupted cache: next run downloads it again
+		end
+		return nil
+	end
+
+	if not fromCache then
+		Compat.EnsureFolder(CACHE_DIR)
+		Compat.WriteFile(path, source)
+	end
+	return data
+end
+
+-- Downloads (or reads from cache) a set. May yield on the first call. Returns the data or nil.
+function IconSets.Load(set)
+	if not allowed[set] then
+		return nil
+	end
+	if store[set] then
+		return store[set]
+	end
+	if failedAt[set] and os.clock() - failedAt[set] < RETRY_AFTER then
+		return nil
+	end
+	local data = readSet(set)
+	if data then
+		store[set] = data
+		failedAt[set] = nil
+		return data
+	end
+	failedAt[set] = os.clock()
+	return nil
+end
+
+-- Loads sets in the background so the first icon does not stall the UI build.
+function IconSets.Preload(sets)
+	task.spawn(function()
+		for _, set in ipairs(sets or { IconSets.Default }) do
+			IconSets.Load(set)
+		end
+	end)
+end
+
+function IconSets.SetDefault(set)
+	set = string.lower(tostring(set))
+	if not allowed[set] then
+		return false
+	end
+	IconSets.Default = set
+	return true
+end
+
+-- "house" -> default set; "craft:folder-stroke" -> that set; unknown prefix (or a disabled set) -> nil
+function IconSets.Parse(icon)
+	if type(icon) ~= "string" then
+		return nil
+	end
+	local set, name = string.match(icon, "^(%w+):(.+)$")
+	if set then
+		set = string.lower(set)
+		if allowed[set] then
+			return set, name
+		end
+		return nil
+	end
+	return IconSets.Default, icon
+end
+
+-- Turns a raw entry into { Image, RectSize, RectOffset, Parts }.
+-- Flat sets map name -> "rbxassetid://..."; spritesheet sets (craft, geist) store a cell inside a sheet.
+-- Parts are extra layers (duotone icons); they are resolved one level deep.
+local function describe(data, name, depth)
+	local entry = data.Icons and data.Icons[name]
+	if entry then
+		local sheet = data.Spritesheets and data.Spritesheets[tostring(entry.Image)] or entry.Image
+		if type(sheet) == "number" then
+			sheet = "rbxassetid://" .. sheet
+		end
+		local descriptor = {
+			Image = sheet,
+			RectSize = entry.ImageRectSize,
+			RectOffset = entry.ImageRectPosition,
+		}
+		if entry.Parts and depth < 1 then
+			descriptor.Parts = {}
+			for _, partName in ipairs(entry.Parts) do
+				local part = describe(data, partName, depth + 1)
+				if part then
+					table.insert(descriptor.Parts, part)
+				end
+			end
+		end
+		return descriptor
+	end
+
+	local flat = data[name]
+	if type(flat) == "string" then
+		return { Image = flat }
+	end
+	return nil
+end
+
+-- Returns a descriptor, or nil when the set is disabled / unreachable / has no such icon.
+function IconSets.Get(icon)
+	local set, name = IconSets.Parse(icon)
+	if not set then
+		return nil
+	end
+	local data = IconSets.Load(set)
+	if not data then
+		return nil
+	end
+	return describe(data, name, 0)
+end
+
+-- Writes a descriptor into an ImageLabel (extra layers become child ImageLabels).
+function IconSets.Apply(label, descriptor)
+	label.Image = descriptor.Image
+	if descriptor.RectSize then
+		label.ImageRectSize = descriptor.RectSize
+		label.ImageRectOffset = descriptor.RectOffset or Vector2.new(0, 0)
+	end
+	for _, part in ipairs(descriptor.Parts or {}) do
+		local layer = Utility.Create("ImageLabel", {
+			Name = "Part",
+			Size = UDim2.fromScale(1, 1),
+			Parent = label,
+		})
+		IconSets.Apply(layer, part)
+	end
+end
+
+IconSets.Commit = COMMIT
+
+return IconSets
+end
+
 __modules["core/Icons"] = function(Import)
 --// Icons: asset-id resolver + small glyphs drawn from frames, so core controls
 --// (chevron, check, close...) never depend on uploaded images.
 
 local Utility = Import("core/Utility")
+local IconSets = Import("core/IconSets")
 
 local Create = Utility.Create
 
@@ -4445,11 +4715,55 @@ function Icons.SetColor(glyph, color)
 	end)
 end
 
--- Empties a glyph holder so another shape can be drawn into the same slot.
-function Icons.Clear(glyph)
-	for _, child in ipairs(glyph:GetChildren()) do
-		child:Destroy()
+--// Image icons -----------------------------------------------------------------
+-- Fills `parent` with an ImageLabel for:
+--   * an asset id / rbxassetid / registered name -> full color image
+--   * a Footagesus icon ("house", "lucide:house", "craft:folder-stroke") -> monochrome, tintable
+-- Returns label, isMonochrome; nil when the icon cannot be found (unknown name, offline...).
+function Icons.Create(icon, parent)
+	if icon == nil or icon == "" then
+		return nil
 	end
+
+	local direct = Icons.Resolve(icon)
+	if direct then
+		return Create("ImageLabel", { Name = "Icon", Size = UDim2.fromScale(1, 1), Image = direct, Parent = parent }), false
+	end
+
+	local descriptor = IconSets.Get(icon)
+	if not descriptor then
+		return nil
+	end
+	local label = Create("ImageLabel", { Name = "Icon", Size = UDim2.fromScale(1, 1), Parent = parent })
+	IconSets.Apply(label, descriptor)
+	return label, true
+end
+
+-- Tints an icon and its extra layers; pass a duration to animate.
+function Icons.Tint(label, color, duration)
+	local function paint(target)
+		if duration then
+			Utility.Tween(target, { ImageColor3 = color }, duration)
+		else
+			target.ImageColor3 = color
+		end
+	end
+	paint(label)
+	for _, child in ipairs(label:GetChildren()) do
+		if child:IsA("ImageLabel") then
+			paint(child)
+		end
+	end
+end
+
+function Icons.BindImage(theme, label, token)
+	theme:Bind(label, { ImageColor3 = token })
+	for _, child in ipairs(label:GetChildren()) do
+		if child:IsA("ImageLabel") then
+			theme:Bind(child, { ImageColor3 = token })
+		end
+	end
+	return label
 end
 
 return Icons
@@ -5011,6 +5325,7 @@ __modules["init"] = function(Import)
 
 local Compat = Import("core/Compat")
 local Icons = Import("core/Icons")
+local IconSets = Import("core/IconSets")
 local Theme = Import("core/Theme")
 local Window = Import("components/Window")
 local Notification = Import("components/Notification")
@@ -5024,10 +5339,11 @@ if env.MugiwaraUI and type(env.MugiwaraUI.Destroy) == "function" then
 end
 
 local Library = {
-	Version = "0.2.2",
+	Version = "0.3.0",
 	Windows = {},
 	Theme = Theme.new("Gear5"),
 	Icons = Icons,
+	IconSets = IconSets,
 	Compat = Compat,
 }
 
@@ -5054,6 +5370,16 @@ end
 -- Library:AddTheme("Mine", { Accent = Color3..., Gradient = { Color3... } })
 function Library:AddTheme(name, tokens)
 	self.Theme:Add(name, tokens)
+end
+
+-- Default icon set for names without a prefix ("house" vs "lucide:house"): lucide, craft, geist, gravity, solar
+function Library:SetIconSet(name)
+	return IconSets.SetDefault(name)
+end
+
+-- Downloads icon sets ahead of time (in the background) so the first icons do not wait on the network.
+function Library:PreloadIcons(...)
+	IconSets.Preload({ ... })
 end
 
 function Library:Destroy()

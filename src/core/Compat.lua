@@ -239,6 +239,25 @@ function Compat.ImageLoaded(label)
 	return nil
 end
 
+--// HTTP -----------------------------------------------------------------------
+-- Plain GET for executors: game:HttpGet first, request() as a fallback. Returns the body or nil.
+function Compat.HttpGet(url)
+	local ok, body = pcall(function()
+		return game:HttpGet(url)
+	end)
+	if ok and type(body) == "string" and body ~= "" then
+		return body
+	end
+	local requester = request or http_request or (syn and syn.request)
+	if requester then
+		local response = try(requester, { Url = url, Method = "GET" })
+		if response and type(response.Body) == "string" and (response.StatusCode == nil or response.StatusCode == 200) then
+			return response.Body
+		end
+	end
+	return nil
+end
+
 --// Clipboard -----------------------------------------------------------------
 function Compat.SetClipboard(text)
 	local setter = setclipboard or toclipboard or (Clipboard and Clipboard.set)

@@ -144,6 +144,41 @@ section:SetOpen(false)
 section:ToggleOpen()
 check(section.Open == true, "section reopen")
 
+--// icon sets (Footagesus/Icons)
+local houseTab = Window:Tab({ Title = "House", Icon = "house" })
+check(houseTab.IconLabel and houseTab.IconLabel.Image == "rbxassetid://111", "flat set icon (default lucide)")
+check(Window:Tab({ Title = "Prefixed", Icon = "lucide:settings" }).IconLabel.Image == "rbxassetid://222", "prefixed icon name")
+
+local sheetTab = Window:Tab({ Title = "Sheet", Icon = "craft:folder-stroke" })
+local sheet = sheetTab.IconLabel
+check(sheet.Image == "rbxassetid://5" and sheet.ImageRectSize.X == 96 and sheet.ImageRectOffset.X == 96, "spritesheet icon uses the rect")
+
+local layered = Window:Tab({ Title = "Layered", Icon = "geist:bell" }).IconLabel
+check(layered.Image == "rbxassetid://7" and #layered:GetChildren() == 1, "icon Parts become child layers")
+check(layered:GetChildren()[1].ImageRectOffset.X == 128, "part layer uses its own rect")
+
+check(Window:Tab({ Title = "Missing", Icon = "lucide:does-not-exist" }).IconLabel == nil, "unknown icon falls back to the letter badge")
+check(Window:Tab({ Title = "Apple", Icon = "sfsymbols:house" }).IconLabel == nil, "sfsymbols is not enabled")
+check(Window:Tab({ Title = "Asset", Icon = "rbxassetid://424242" }).IconLabel.Image == "rbxassetid://424242", "plain asset ids still work")
+
+local fetched = {}
+for _, url in ipairs(HTTP_LOG) do
+	check(string.find(url, "46d30c19ba7bc601d6ec794a48dc3a89568b1eec", 1, true), "icon downloads must be pinned to a commit: " .. url)
+	check(not string.find(url, "sfsymbols", 1, true), "sfsymbols must never be downloaded")
+	fetched[url] = (fetched[url] or 0) + 1
+end
+for url, count in pairs(fetched) do
+	check(count == 1, "each set is downloaded once (cached afterwards): " .. url)
+end
+
+local iconic = Main:Button({ Title = "With icon", Icon = "lucide:house" })
+check(iconic:SetIcon("lucide:settings") == true, "SetIcon swaps the icon")
+check(iconic:SetIcon("lucide:nope") == false, "SetIcon reports a missing icon")
+check(iconic:SetIcon(nil) == true, "SetIcon(nil) removes the icon")
+check(UI:SetIconSet("craft") and UI.IconSets.Default == "craft", "default set can change")
+check(not UI:SetIconSet("sfsymbols"), "sfsymbols cannot be selected")
+UI:SetIconSet("lucide")
+
 --// tab sections
 local group = Window:TabSection({ Title = "Group" })
 local groupTab = group:Tab({ Title = "InGroup" })

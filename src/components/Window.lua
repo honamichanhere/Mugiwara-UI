@@ -217,11 +217,29 @@ function Window.new(library, opts)
 		Parent = topbar,
 	})
 	Utility.Corner(brand, 9)
-	local logo = Icons.Resolve(opts.Icon)
-	if logo then
-		Create("ImageLabel", { Size = UDim2.fromScale(1, 1), Image = logo, Parent = brand })
-		brand.BackgroundTransparency = 1
-	else
+	-- Icon: asset id (full color logo) or an icon-set name such as "lucide:sun" (tinted on the gradient badge)
+	local logo, monochrome
+	if opts.Icon then
+		local slot = Create("Frame", {
+			Name = "Logo",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			Parent = brand,
+		})
+		logo, monochrome = Icons.Create(opts.Icon, slot)
+		if not logo then
+			slot:Destroy()
+		elseif monochrome then
+			slot.Size = UDim2.fromOffset(18, 18)
+			Base.Gradient(theme, brand, 45)
+			Icons.BindImage(theme, logo, "OnAccent")
+		else
+			brand.BackgroundTransparency = 1
+		end
+	end
+	if not logo then
 		Base.Gradient(theme, brand, 45)
 		local letter = Create("TextLabel", {
 			Size = UDim2.fromScale(1, 1),

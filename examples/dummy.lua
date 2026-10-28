@@ -25,6 +25,7 @@ local Window = MugiwaraUI:CreateWindow({
 	Title = "Mugiwara Dummy",
 	Subtitle = "test hub - UI v" .. MugiwaraUI.Version,
 	Version = "v1.0.0", -- badge next to the title
+	Icon = "lucide:sun", -- icon sets: "set:name" (lucide, craft, geist, gravity, solar), or an asset id
 	Folder = "MugiwaraDummy",
 	Size = UDim2.fromOffset(660, 440),
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -38,7 +39,7 @@ end
 --// 1. Dashboard ---------------------------------------------------------------
 -- Tab sections: titled, collapsible groups of tabs in the sidebar
 local Overview = Window:TabSection({ Title = "Overview" })
-local Dashboard = Overview:Tab({ Title = "Dashboard" })
+local Dashboard = Overview:Tab({ Title = "Dashboard", Icon = "lucide:layout-dashboard" })
 
 local status = Dashboard:Paragraph({ Title = "Session", Desc = "Starting..." })
 local startedAt = os.clock()
@@ -66,6 +67,7 @@ end
 Dashboard:Button({
 	Title = "Say hello",
 	Desc = "Fires a success notification.",
+	Icon = "lucide:zap",
 	Callback = function()
 		act("hello")
 		say("Yohoho!", "The dummy hub says hi.", "success")
@@ -93,7 +95,7 @@ Dashboard:Label({ Title = "Executor: " .. tostring(MugiwaraUI.Compat.Executor) }
 Dashboard:Label({ Title = "File access: " .. (MugiwaraUI.Compat.FilesSupported and "yes" or "no (configs disabled)") })
 
 --// 2. Elements ----------------------------------------------------------------
-local Elements = Overview:Tab({ Title = "Elements" })
+local Elements = Overview:Tab({ Title = "Elements", Icon = "lucide:sliders-horizontal" })
 
 local master = Elements:Toggle({
 	Title = "Master switch",
@@ -110,6 +112,7 @@ end
 
 track(Elements:Toggle({
 	Title = "Auto Farm (fake)",
+	Icon = "lucide:swords",
 	Flag = "farm",
 	Callback = function(on)
 		act("farm " .. tostring(on))
@@ -118,6 +121,7 @@ track(Elements:Toggle({
 
 track(Elements:Slider({
 	Title = "Speed multiplier",
+	Icon = "lucide:flame",
 	Desc = "Step 0.1, with a suffix.",
 	Flag = "speed",
 	Value = { Min = 0.5, Max = 5, Default = 1 },
@@ -210,6 +214,7 @@ track(Elements:Input({
 
 track(Elements:Keybind({
 	Title = "Action key",
+	Icon = "lucide:keyboard",
 	Desc = "Click, press a key. Backspace clears, Escape cancels.",
 	Flag = "actionkey",
 	Value = "K",
@@ -221,6 +226,7 @@ track(Elements:Keybind({
 
 track(Elements:Colorpicker({
 	Title = "ESP color",
+	Icon = "lucide:palette",
 	Flag = "espcolor",
 	Default = Color3.fromRGB(255, 150, 40),
 	Transparency = 0,
@@ -272,9 +278,72 @@ hideMe:SetCallback(function()
 	end)
 end)
 
+--// 2b. Icons -------------------------------------------------------------------
+local IconsTab = Overview:Tab({ Title = "Icons", Icon = "lucide:image" })
+
+IconsTab:Paragraph({
+	Title = "Icon sets",
+	Desc = "Icons come from github.com/Footagesus/Icons (pinned to one commit). A set is downloaded the first time it is used, then cached in your executor workspace.",
+	Icon = "lucide:info",
+})
+
+local samples = IconsTab:Section({ Title = "One icon per set", Opened = true })
+for _, sample in ipairs({
+	{ "Lucide", "lucide:house" },
+	{ "Craft", "craft:folder-stroke" },
+	{ "Geist", "geist:bell" },
+	{ "Gravity UI", "gravity:gear" },
+	{ "Solar", "solar:crown-bold" },
+}) do
+	samples:Button({
+		Title = sample[1],
+		Desc = sample[2],
+		Icon = sample[2],
+		Callback = function()
+			say(sample[1], sample[2], "info")
+		end,
+	})
+end
+
+local tryIt = IconsTab:Section({ Title = "Try any icon", Opened = true })
+local previewSet, previewName = "lucide", "heart"
+local preview = tryIt:Paragraph({ Title = "Preview", Desc = "lucide:heart", Icon = "lucide:heart" })
+
+tryIt:Dropdown({
+	Title = "Set",
+	Values = MugiwaraUI.IconSets.Available,
+	Value = "lucide",
+	Searchable = false,
+	Callback = function(value)
+		previewSet = value or "lucide"
+	end,
+})
+
+tryIt:Input({
+	Title = "Icon name",
+	Desc = "Lucide: house, swords, skull... Solar names end with -bold / -linear.",
+	Value = "heart",
+	Placeholder = "heart",
+	Callback = function(text)
+		previewName = text
+	end,
+})
+
+tryIt:Button({
+	Title = "Show icon",
+	Callback = function()
+		local icon = previewSet .. ":" .. previewName
+		local found = preview:SetIcon(icon)
+		preview:SetDesc(found and icon or (icon .. "  (not found)"))
+		if not found then
+			say("Icon not found", icon .. " does not exist in that set (or it could not be downloaded).", "warning")
+		end
+	end,
+})
+
 --// 3. Notifications & dialogs -------------------------------------------------
 local Feedback = Window:TabSection({ Title = "Feedback" })
-local Notifs = Feedback:Tab({ Title = "Notifications" })
+local Notifs = Feedback:Tab({ Title = "Notifications", Icon = "lucide:bell" })
 
 Notifs:Button({ Title = "Info", Callback = function() say("Info", "Something neutral happened.", "info") end })
 Notifs:Button({ Title = "Success", Callback = function() say("Success", "Everything worked.", "success") end })
@@ -335,7 +404,7 @@ Notifs:Button({
 --// 4. Window controls ---------------------------------------------------------
 Window:SidebarDivider()
 local SettingsGroup = Window:TabSection({ Title = "Settings" })
-local Settings = SettingsGroup:Tab({ Title = "Window" })
+local Settings = SettingsGroup:Tab({ Title = "Window", Icon = "lucide:app-window" })
 
 Settings:Paragraph({
 	Title = "Theme",
@@ -434,7 +503,7 @@ Settings:Button({
 })
 
 --// 5. Configs -----------------------------------------------------------------
-local Configs = SettingsGroup:Tab({ Title = "Configs" })
+local Configs = SettingsGroup:Tab({ Title = "Configs", Icon = "lucide:save" })
 Configs:Paragraph({
 	Title = "How it works",
 	Desc = "Every element with a Flag is saved. Change a few values on the Elements tab, save a config here, change them again, then load it back.",
