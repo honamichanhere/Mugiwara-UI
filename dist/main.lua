@@ -1,4 +1,4 @@
--- Mugiwara UI v0.6.1
+-- Mugiwara UI v0.6.2
 -- Glass + neon Gear 5 UI library for Roblox script hubs.
 -- https://github.com/honamichanhere/Mugiwara-UI  |  MIT License
 
@@ -3734,10 +3734,13 @@ function Window.new(library, opts)
 
 	--// floating open button
 	if opts.OpenButton ~= false then
+		-- OpenButton can be true / nil or a table { Title = "M", Position = UDim2... }
+		local custom = type(opts.OpenButton) == "table" and opts.OpenButton or {}
 		local button = Create("TextButton", {
 			Name = "OpenButton",
 			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.new(0.5, 0, 0, 52),
+			-- middle of the left edge by default (clear of the thumbstick, jump button and the top bar)
+			Position = custom.Position or UDim2.new(0, 36, 0.5, 0),
 			Size = UDim2.fromOffset(0, 0),
 			BackgroundColor3 = Color3.new(0, 0, 0),
 			Visible = false,
@@ -3752,7 +3755,7 @@ function Window.new(library, opts)
 
 		local mark = Create("TextLabel", {
 			Size = UDim2.fromScale(1, 1),
-			Text = (opts.OpenButton and opts.OpenButton.Title) or string.upper(string.sub(self.Title, 1, 1)),
+			Text = custom.Title or string.upper(string.sub(self.Title, 1, 1)),
 			Font = Enum.Font.GothamBlack,
 			TextSize = 22,
 			TextXAlignment = Enum.TextXAlignment.Center,
@@ -8603,7 +8606,7 @@ if env.MugiwaraUI and type(env.MugiwaraUI.Destroy) == "function" then
 end
 
 local Library = {
-	Version = "0.6.1",
+	Version = "0.6.2",
 	Windows = {},
 	Theme = Theme.new("Gear 5"),
 	Icons = Icons,

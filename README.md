@@ -11,7 +11,7 @@ A glass + neon UI library for Roblox script hubs, themed after Luffy's **Gear 5*
 Load a **pinned version** (recommended). A tag never changes, so a later push cannot break the hubs that use it:
 
 ```lua
-local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.6.1/dist/main.lua"))()
+local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.6.2/dist/main.lua"))()
 ```
 
 `.../main/dist/main.lua` always serves the newest build (GitHub caches it for about 5 minutes). Available tags are listed in the
@@ -20,7 +20,7 @@ local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/ho
 ## Quick start
 
 ```lua
-local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.6.1/dist/main.lua"))()
+local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.6.2/dist/main.lua"))()
 
 local Window = MugiwaraUI:CreateWindow({
     Title = "Mugiwara Hub",
@@ -52,7 +52,7 @@ To test local changes without pushing: run `npm run build`, copy `dist/main.lua`
 Three pieces of the same set, all drawn in the active theme:
 
 ```lua
-local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/main/dist/main.lua"))()
+local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.6.2/dist/main.lua"))()
 
 -- 1) Key UI: a separate card. Validate is YOUR check (HTTP request, hash...), it may yield.
 local KeyUI = MugiwaraUI:KeySystem({
@@ -135,7 +135,7 @@ Methods: `SetStatus(text)`, `SetProgress(target, cap)`, `Log(text, "info"|"ok"|"
 | `ToggleKey` | `Enum.KeyCode.RightShift` | |
 | `Blur` | `false` | Blurs the game behind the window |
 | `Neon` | `true` | Glow rings around the window |
-| `OpenButton` | `true` | `false` removes the floating button; `{ Title = "M" }` sets its glyph |
+| `OpenButton` | `true` | The floating button that reopens a minimized window. Sits in the middle of the left edge and can be dragged. `false` removes it; `{ Title = "M", Position = UDim2.new(0, 36, 0.5, 0) }` changes the glyph / start position |
 | `ConfirmClose` | `true` | Ask before the X button destroys the UI |
 | `ShowUser` | `true` | Avatar chip in the sidebar |
 | `SideBarWidth` | `176` (`150` on mobile) | |

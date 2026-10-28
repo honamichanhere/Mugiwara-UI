@@ -312,6 +312,18 @@ Window:SetScale(0.8)
 Window:Destroy()
 check(Window.Destroyed, "destroy")
 
+--// open button: middle of the left edge by default, configurable
+local Placed = UI:CreateWindow({ Title = "Placed" })
+local defaultPos = Placed.OpenButton.Position
+check(defaultPos.X.Scale == 0 and defaultPos.X.Offset == 36 and defaultPos.Y.Scale == 0.5 and defaultPos.Y.Offset == 0, "the open button starts in the middle of the left edge")
+Placed:Destroy()
+local Custom = UI:CreateWindow({ Title = "Custom", OpenButton = { Title = "X", Position = UDim2.new(1, -40, 0.25, 0) } })
+check(Custom.OpenButton.Position.X.Scale == 1 and Custom.OpenButton.Position.Y.Scale == 0.25, "OpenButton.Position overrides the start position")
+Custom:Destroy()
+local Plain = UI:CreateWindow({ Title = "Plain", OpenButton = true }) -- a bare true used to error
+check(Plain.OpenButton ~= nil, "OpenButton = true works")
+Plain:Destroy()
+
 --// second window + re-execution replaces the first library
 local Second = UI:CreateWindow({ Title = "Second", Neon = false, OpenButton = false, ShowUser = false, Resizable = false })
 Second:Tab({ Title = "T" }):Toggle({ Title = "x" })

@@ -2,6 +2,9 @@
 
 Versions follow `package.json`. Every release is a git tag (`v0.6.1`, ...); `dist/main.lua` at that tag is what users load.
 
+## 0.6.2
+- The floating open button now starts in the middle of the left edge (was top center). `OpenButton = { Position = UDim2... }` overrides it; `OpenButton = true` no longer errors.
+
 ## 0.6.1
 - Chat notifications (`OnMessage`) arrive one by one: queued, `NotifySpacing` (0.8 s) apart, only the newest `NotifyLimit` (5) of a burst, never for muted users.
 
