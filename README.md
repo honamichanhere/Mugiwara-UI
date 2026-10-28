@@ -28,6 +28,12 @@ MugiwaraUI:Notify({ Title = "Loaded", Content = "Yohoho!", Type = "success" })
 
 See [`examples/showcase.lua`](examples/showcase.lua) for every element.
 
+## Try it
+
+[`examples/dummy.lua`](examples/dummy.lua) is a fake hub that uses every feature (nothing touches the game). Paste it into your executor and run it.
+
+To test local changes without pushing: run `npm run build`, copy `dist/main.lua` into your executor's `workspace` folder as `MugiwaraUI.lua`, then run the dummy. It loads that local file first and only falls back to GitHub when it is missing.
+
 ## Features
 
 - Glass window with animated neon border, drag, resize, minimize to a floating button, `RightShift` toggle

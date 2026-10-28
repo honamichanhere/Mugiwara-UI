@@ -33,3 +33,12 @@ lua.lua_setglobal(L, to_luastring("DIST_SOURCE"));
 
 run("mock", readFileSync(join(root, "tests", "mock.lua"), "utf8"));
 run("smoke", readFileSync(join(root, "tests", "smoke.lua"), "utf8"));
+
+// The shipped examples must run cleanly too (they load the bundle through the mocked HttpGet).
+for (const example of ["showcase", "dummy"]) {
+	run(`example:${example}`, readFileSync(join(root, "examples", `${example}.lua`), "utf8"));
+	run(
+		`example:${example}:after`,
+		`task.flush(); assert(#WARNINGS == 0, "warnings: " .. table.concat(WARNINGS, " | ")); print("example ${example} ok")`
+	);
+}

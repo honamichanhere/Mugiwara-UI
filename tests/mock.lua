@@ -385,3 +385,11 @@ makefolder = function(path) folders[path] = true end
 isfolder = function(path) return folders[path] == true end
 delfile = function(path) files[path] = nil end
 MOCK.files = files
+
+-- executors expose these; the examples load the bundle through them
+loadstring = function(source)
+	return load(source, "=chunk")
+end
+game.HttpGet = function()
+	return DIST_SOURCE
+end
