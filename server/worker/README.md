@@ -33,6 +33,9 @@ local chat = MugiwaraUI.ChatTransports.Http({
 tab:Chat({ Transport = chat })
 ```
 
+Tip: if you publish your fork, keep your real `database_id` out of git. Put it in `wrangler.local.toml` (already
+gitignored, same content as `wrangler.toml`) and run the commands with `-c wrangler.local.toml`.
+
 Settings (`[vars]` in `wrangler.toml`): `MAX_LENGTH` (characters per message, default 200) and `COOLDOWN_MS`
 (minimum time between two messages of one user, default 1500).
 
