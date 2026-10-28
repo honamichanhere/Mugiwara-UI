@@ -158,6 +158,77 @@ function Utility.Tween(inst, goal, duration, style, direction)
 	return tween
 end
 
+-- Endless rotation of a UIGradient (neon borders). Stopped through the maid.
+function Utility.Spin(maid, gradient, seconds)
+	local tween = TweenService:Create(
+		gradient,
+		TweenInfo.new(seconds, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, -1),
+		{ Rotation = gradient.Rotation + 360 }
+	)
+	tween:Play()
+	maid:Give(function()
+		tween:Cancel()
+	end)
+	return tween
+end
+
+--// Signal: small event with Connect / Once / Wait / Fire (used for Loader.Finished, KeyUI.Completed...)
+-- A sticky signal remembers its last Fire, so Wait() called afterwards returns immediately.
+local Signal = {}
+Signal.__index = Signal
+
+function Signal.new(sticky)
+	return setmetatable({ Handlers = {}, Waiters = {}, Sticky = sticky == true, Fired = false, Args = nil }, Signal)
+end
+
+function Signal:Connect(fn)
+	local entry = { Fn = fn }
+	table.insert(self.Handlers, entry)
+	return {
+		Disconnect = function()
+			local index = table.find(self.Handlers, entry)
+			if index then
+				table.remove(self.Handlers, index)
+			end
+		end,
+	}
+end
+
+function Signal:Once(fn)
+	local connection
+	connection = self:Connect(function(...)
+		connection.Disconnect()
+		fn(...)
+	end)
+	return connection
+end
+
+function Signal:Fire(...)
+	if self.Sticky then
+		self.Fired = true
+		self.Args = table.pack(...)
+	end
+	for _, entry in ipairs(table.clone(self.Handlers)) do
+		task.spawn(entry.Fn, ...)
+	end
+	local waiters = self.Waiters
+	self.Waiters = {}
+	for _, thread in ipairs(waiters) do
+		task.spawn(thread, ...)
+	end
+end
+
+-- Yields the calling thread until the signal fires; returns the fired arguments.
+function Signal:Wait()
+	if self.Sticky and self.Fired then
+		return table.unpack(self.Args, 1, self.Args.n)
+	end
+	table.insert(self.Waiters, (coroutine.running())) -- parentheses: keep only the thread
+	return coroutine.yield()
+end
+
+Utility.Signal = Signal
+
 --// Math / formatting
 function Utility.Clamp(value, min, max)
 	return math.max(min, math.min(max, value))

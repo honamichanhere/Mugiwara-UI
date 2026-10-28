@@ -166,21 +166,53 @@ function table.find(t, value)
 end
 function table.create(_) return {} end
 
-local delayed = {}
+-- Coroutine scheduler: task.spawn runs until the first task.wait, task.delay / task.wait park the thread
+-- until task.flush() (one step per call), so loops with waits cannot hang the test.
+local queue = {}
+
+local function resume(thread, ...)
+	local ok, err = coroutine.resume(thread, ...)
+	if not ok then
+		error(err, 0)
+	end
+end
+
+local function start(fn, ...)
+	local thread = coroutine.create(fn)
+	resume(thread, ...)
+	return thread
+end
+
 task = {
-	spawn = function(fn, ...) fn(...) end,
-	defer = function(fn, ...) fn(...) end,
-	delay = function(time, fn, ...)
-		table.insert(delayed, { time = time, fn = fn, args = { ... } })
+	spawn = function(fn, ...)
+		if type(fn) == "thread" then
+			resume(fn, ...)
+			return fn
+		end
+		return start(fn, ...)
 	end,
-	wait = function() end,
-	-- test helper: run every pending task.delay callback
+	defer = function(fn, ...)
+		return task.spawn(fn, ...)
+	end,
+	delay = function(time, fn, ...)
+		local args = table.pack(...)
+		table.insert(queue, { time = time, run = function() start(fn, table.unpack(args, 1, args.n)) end })
+	end,
+	wait = function(time)
+		if coroutine.isyieldable() then
+			local thread = coroutine.running()
+			table.insert(queue, { time = time or 0, run = function() resume(thread) end })
+			coroutine.yield()
+		end
+		return time or 0
+	end,
+	-- test helper: run everything that is currently parked (items queued while running wait for the next call)
 	flush = function()
-		table.sort(delayed, function(a, b) return a.time < b.time end)
-		local queue = delayed
-		delayed = {}
-		for _, item in ipairs(queue) do
-			item.fn(table.unpack(item.args))
+		table.sort(queue, function(a, b) return a.time < b.time end)
+		local batch = queue
+		queue = {}
+		for _, item in ipairs(batch) do
+			item.run()
 		end
 	end,
 }
@@ -271,6 +303,7 @@ function Methods.GetPropertyChangedSignal(self, name)
 	end
 	return signals[name]
 end
+function Methods.CaptureFocus() end
 function Methods.Destroy(self)
 	if rawget(self, "_destroyed") then
 		return
@@ -374,7 +407,7 @@ local services = {
 	TextService = {
 		GetTextSize = function(_, text) return Vector2.new(#text * 6, 14) end,
 	},
-	RunService = { Heartbeat = newSignal() },
+	RunService = { Heartbeat = newSignal(), RenderStepped = newSignal() },
 	MarketplaceService = {
 		GetProductInfo = function(_, id)
 			return { AssetTypeId = MOCK_ASSET_TYPES[id] }
@@ -429,4 +462,8 @@ game.GetObjects = function()
 	local decal = Instance.new("Decal")
 	decal.Texture = "http://www.roblox.com/asset/?id=999"
 	return { decal }
+end
+
+setclipboard = function(text)
+	MOCK.clipboard = text
 end

@@ -1,4 +1,4 @@
--- Mugiwara UI v0.3.0
+-- Mugiwara UI v0.4.0
 -- Glass + neon Gear 5 UI library for Roblox script hubs.
 -- https://github.com/honamichanhere/Mugiwara-UI  |  MIT License
 
@@ -733,6 +733,1365 @@ return function(window, opts)
 end
 end
 
+__modules["components/KeySystem"] = function(Import)
+--// Key UI: a separate glass card that asks for a key and validates it with YOUR function.
+--//
+--//   local KeyUI = MugiwaraUI:KeySystem({
+--//       Title = "Mugiwara Hub",
+--//       Folder = "MugiwaraHub",
+--//       Links = { { Title = "Get Key", Link = "https://example.com/key" } },
+--//       Validate = function(key) return key == "abc", "Invalid key" end,
+--//   })
+--//   local key = KeyUI:Wait()   -- yields until a key is accepted; nil if the user closed the card
+
+local Utility = Import("core/Utility")
+local Compat = Import("core/Compat")
+local Icons = Import("core/Icons")
+local Base = Import("components/Base")
+local Shell = Import("components/Shell")
+
+local Create, Tween = Utility.Create, Utility.Tween
+
+local WIDTH = 420
+local PAD = 24
+
+local function trim(text)
+	text = string.gsub(tostring(text or ""), "^%s+", "")
+	text = string.gsub(text, "%s+$", "")
+	return text
+end
+
+-- opts: Title, Subtitle, Icon, Note (false hides it), Placeholder, Folder, SaveKey (default true: offers
+--       the "Remember key" switch), Remember (switch starts on), Links = { { Title, Link, Icon, Callback } },
+--       Validate(key) -> valid, message  (required, may yield), OnSuccess(key), OnClose()
+return function(library, opts)
+	opts = opts or {}
+	if type(opts.Validate) ~= "function" then
+		error("MugiwaraUI:KeySystem needs a Validate(key) function that returns true or false, message", 2)
+	end
+
+	local theme = library.Theme
+	local folder = opts.Folder or "MugiwaraUI"
+	local keyPath = folder .. "/key.txt"
+	local canSave = opts.SaveKey ~= false and Compat.FilesSupported
+	local links = opts.Links or {}
+
+	local KeyUI = {
+		Completed = Utility.Signal.new(true),
+		Key = nil,
+		Destroyed = false,
+	}
+
+	if library._keyUI and not library._keyUI.Destroyed then
+		library._keyUI:Close()
+	end
+	library._keyUI = KeyUI
+
+	local shell, status, box, submitButton, submitLabel
+	local busy, finished = false, false
+	local remember = opts.Remember == true
+
+	--// validation ---------------------------------------------------------------------
+	-- returns valid (bool), message (string|nil); errors inside Validate count as invalid
+	local function runValidate(key)
+		local ok, valid, message = pcall(opts.Validate, key)
+		if not ok then
+			warn("[MugiwaraUI] Validate error: " .. tostring(valid))
+			return false, "Validation failed. Try again."
+		end
+		return valid == true, message
+	end
+
+	local function setStatus(text, kind)
+		if not status then
+			return
+		end
+		local colors = {
+			info = theme.Tokens.SubText,
+			error = theme.Tokens.Danger,
+			success = theme.Tokens.Success,
+			busy = theme.Tokens.Accent,
+		}
+		status.Text = text or ""
+		status.TextColor3 = colors[kind or "info"]
+	end
+
+	function KeyUI:SetStatus(text, kind)
+		setStatus(text, kind)
+	end
+
+	function KeyUI:ClearSavedKey()
+		Compat.DeleteFile(keyPath)
+	end
+
+	local function finish(key)
+		if finished then
+			return
+		end
+		finished = true
+		KeyUI.Key = key
+		local function done()
+			KeyUI.Destroyed = true
+			KeyUI.Completed:Fire(key)
+		end
+		if shell then
+			shell:Hide(done)
+		else
+			done()
+		end
+	end
+
+	function KeyUI:Close()
+		if finished then
+			return
+		end
+		Utility.SafeCall(opts.OnClose)
+		finish(nil)
+	end
+
+	function KeyUI:Wait()
+		return self.Completed:Wait()
+	end
+
+	--// UI ------------------------------------------------------------------------------
+	local function shake()
+		local offsets = { 10, -9, 7, -5, 3, 0 }
+		for index, dx in ipairs(offsets) do
+			task.delay((index - 1) * 0.05, function()
+				if shell and shell.Pop.Parent then
+					Tween(shell.Pop, { Position = UDim2.new(0.5, dx, 0.5, 0) }, 0.05, Enum.EasingStyle.Sine)
+				end
+			end)
+		end
+	end
+
+	local function submit(typed)
+		if busy or finished then
+			return
+		end
+		local key = trim(typed or (box and box.Text) or "")
+		if key == "" then
+			setStatus("Please enter your key.", "error")
+			shake()
+			return
+		end
+
+		busy = true
+		setStatus("Checking key...", "busy")
+		if submitLabel then
+			submitLabel.Text = "Checking..."
+		end
+
+		task.spawn(function()
+			local valid, message = runValidate(key)
+			if not valid then
+				busy = false -- an accepted key keeps the card locked while it plays the success animation
+			end
+
+			if valid then
+				setStatus(message or "Key accepted.", "success")
+				if submitLabel then
+					submitLabel.Text = "Access granted"
+				end
+				if submitButton then
+					submitButton.BackgroundColor3 = theme.Tokens.Success
+				end
+				if canSave then
+					if remember then
+						Compat.EnsureFolder(folder)
+						Compat.WriteFile(keyPath, key)
+					else
+						Compat.DeleteFile(keyPath)
+					end
+				end
+				Utility.SafeCall(opts.OnSuccess, key)
+				task.delay(0.9, function()
+					finish(key)
+				end)
+			else
+				setStatus(message or "Invalid key.", "error")
+				if submitLabel then
+					submitLabel.Text = "Verify Key"
+				end
+				shake()
+			end
+		end)
+	end
+
+	function KeyUI:Submit(key)
+		submit(key)
+	end
+
+	local function build()
+		local hasNote = opts.Note ~= false
+		local hasLinks = #links > 0
+		local y = 20
+
+		-- vertical layout: positions are computed first so the card gets exactly the height it needs
+		local headerY = y
+		y = y + 64
+		local noteY = y
+		if hasNote then
+			y = y + 44
+		end
+		local fieldY = y
+		y = y + 46 + 6
+		local statusY = y
+		y = y + 20 + 6
+		local rememberY = y
+		if canSave then
+			y = y + 26 + 10
+		end
+		local verifyY = y
+		y = y + 46 + 10
+		local linksY = y
+		if hasLinks then
+			y = y + 34
+		end
+		local height = y + (hasLinks and 24 or 14)
+
+		shell = Shell.new(library, {
+			Name = "Key",
+			Size = Vector2.new(WIDTH, height),
+			Backdrop = 0.45,
+			MinScale = 0.55,
+		})
+		local maid = shell.Maid
+		local card = shell.Card
+
+		--// header
+		local brand = Create("Frame", {
+			Position = UDim2.fromOffset(PAD, headerY),
+			Size = UDim2.fromOffset(44, 44),
+			BackgroundColor3 = Color3.new(1, 1, 1),
+			Parent = card,
+		})
+		Utility.Corner(brand, 12)
+		Base.Gradient(theme, brand, 45)
+		local slot = Create("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromOffset(24, 24),
+			BackgroundTransparency = 1,
+			Parent = brand,
+		})
+		local logo, monochrome = Icons.Create(opts.Icon or "lucide:key-round", slot)
+		if logo and monochrome then
+			Icons.BindImage(theme, logo, "OnAccent")
+		elseif logo then
+			brand.BackgroundTransparency = 1
+			slot.Size = UDim2.fromScale(1, 1)
+		else
+			slot:Destroy()
+			local letter = Create("TextLabel", {
+				Size = UDim2.fromScale(1, 1),
+				Text = string.upper(string.sub(opts.Title or "M", 1, 1)),
+				Font = Enum.Font.GothamBlack,
+				TextSize = 22,
+				TextXAlignment = Enum.TextXAlignment.Center,
+				Parent = brand,
+			})
+			theme:Bind(letter, { TextColor3 = "OnAccent" })
+		end
+
+		local title = Create("TextLabel", {
+			Position = UDim2.fromOffset(PAD + 56, headerY + 3),
+			Size = UDim2.new(1, -(PAD + 56 + 56), 0, 24),
+			Text = opts.Title or "Mugiwara Hub",
+			Font = Utility.Fonts.Title,
+			TextSize = 19,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			Parent = card,
+		})
+		Base.Gradient(theme, title, 0)
+
+		local subtitle = Create("TextLabel", {
+			Position = UDim2.fromOffset(PAD + 56, headerY + 27),
+			Size = UDim2.new(1, -(PAD + 56 + 56), 0, 16),
+			Text = opts.Subtitle or "Key System",
+			Font = Utility.Fonts.Desc,
+			TextSize = 13,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			Parent = card,
+		})
+		theme:Bind(subtitle, { TextColor3 = "SubText" })
+
+		local closeButton = Create("TextButton", {
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.new(1, -14, 0, headerY - 4),
+			Size = UDim2.fromOffset(34, 34),
+			BackgroundColor3 = Color3.new(1, 1, 1),
+			BackgroundTransparency = 1,
+			Parent = card,
+		})
+		Utility.Corner(closeButton, 9)
+		local closeGlyph = Icons.Bind(theme, Icons.Close(closeButton, 20, 2), "SubText")
+		closeButton.MouseEnter:Connect(function()
+			Tween(closeButton, { BackgroundTransparency = 0.88 }, 0.15)
+			Icons.SetColor(closeGlyph, theme.Tokens.Danger)
+		end)
+		closeButton.MouseLeave:Connect(function()
+			Tween(closeButton, { BackgroundTransparency = 1 }, 0.2)
+			Icons.SetColor(closeGlyph, theme.Tokens.SubText)
+		end)
+		maid:Give(closeButton.MouseButton1Click:Connect(function()
+			KeyUI:Close()
+		end))
+
+		--// note
+		if hasNote then
+			local note = Create("TextLabel", {
+				Position = UDim2.fromOffset(PAD, noteY),
+				Size = UDim2.new(1, -PAD * 2, 0, 36),
+				Text = opts.Note or "Enter your key to continue.",
+				Font = Utility.Fonts.Desc,
+				TextSize = 14,
+				TextWrapped = true,
+				TextYAlignment = Enum.TextYAlignment.Top,
+				Parent = card,
+			})
+			theme:Bind(note, { TextColor3 = "SubText" })
+		end
+
+		--// key field
+		local field, fieldStroke = Base.Field(theme, card, UDim2.new(1, -PAD * 2, 0, 46), UDim2.fromOffset(PAD, fieldY))
+		local keyIconSlot = Create("Frame", {
+			AnchorPoint = Vector2.new(0, 0.5),
+			Position = UDim2.new(0, 14, 0.5, 0),
+			Size = UDim2.fromOffset(20, 20),
+			BackgroundTransparency = 1,
+			Parent = field,
+		})
+		local keyIcon = Icons.Create("lucide:key-round", keyIconSlot)
+		if keyIcon then
+			Icons.BindImage(theme, keyIcon, "Muted")
+		end
+
+		local getClipboard = Compat.GetClipboard
+		local pasteWidth = getClipboard and 64 or 0
+		box = Create("TextBox", {
+			Position = UDim2.fromOffset(46, 0),
+			Size = UDim2.new(1, -(46 + 10 + pasteWidth), 1, 0),
+			Text = "",
+			PlaceholderText = opts.Placeholder or "Enter your key...",
+			Font = Utility.Fonts.Body,
+			TextSize = 15,
+			ClearTextOnFocus = false,
+			Parent = field,
+		})
+		theme:Bind(box, { TextColor3 = "Text", PlaceholderColor3 = "Muted" })
+		KeyUI.Box = box
+
+		maid:Give(box.Focused:Connect(function()
+			Tween(fieldStroke, { Transparency = 0.2 }, 0.2)
+			fieldStroke.Color = theme.Tokens.Accent
+		end))
+		maid:Give(box.FocusLost:Connect(function(enterPressed)
+			Tween(fieldStroke, { Transparency = theme.Tokens.StrokeAlpha }, 0.2)
+			fieldStroke.Color = theme.Tokens.Stroke
+			if enterPressed then
+				submit()
+			end
+		end))
+
+		if getClipboard then
+			local paste = Create("TextButton", {
+				AnchorPoint = Vector2.new(1, 0.5),
+				Position = UDim2.new(1, -8, 0.5, 0),
+				Size = UDim2.fromOffset(52, 30),
+				BackgroundColor3 = Color3.new(1, 1, 1),
+				Text = "Paste",
+				Font = Enum.Font.GothamBold,
+				TextSize = 12,
+				TextXAlignment = Enum.TextXAlignment.Center,
+				Parent = field,
+			})
+			Utility.Corner(paste, 8)
+			theme:Bind(paste, { BackgroundColor3 = "Card", BackgroundTransparency = "CardHoverAlpha", TextColor3 = "Text" })
+			maid:Give(paste.MouseButton1Click:Connect(function()
+				local text = getClipboard()
+				if text and text ~= "" then
+					box.Text = trim(text)
+				end
+			end))
+		end
+
+		--// status line
+		status = Create("TextLabel", {
+			Position = UDim2.fromOffset(PAD + 2, statusY),
+			Size = UDim2.new(1, -(PAD + 2) * 2, 0, 20),
+			Text = "",
+			Font = Utility.Fonts.Label,
+			TextSize = 13,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			Parent = card,
+		})
+		KeyUI.Status = status
+
+		--// remember switch
+		if canSave then
+			local row = Create("TextButton", {
+				Position = UDim2.fromOffset(PAD, rememberY),
+				Size = UDim2.new(1, -PAD * 2, 0, 26),
+				Parent = card,
+			})
+			local rowLabel = Create("TextLabel", {
+				Position = UDim2.fromOffset(2, 0),
+				Size = UDim2.new(1, -60, 1, 0),
+				Text = "Remember key on this device",
+				Font = Utility.Fonts.Body,
+				TextSize = 14,
+				Parent = row,
+			})
+			theme:Bind(rowLabel, { TextColor3 = "Text" })
+
+			local track = Create("Frame", {
+				AnchorPoint = Vector2.new(1, 0.5),
+				Position = UDim2.new(1, 0, 0.5, 0),
+				Size = UDim2.fromOffset(40, 22),
+				BackgroundColor3 = Color3.new(1, 1, 1),
+				Parent = row,
+			})
+			Utility.Corner(track, Utility.Pill)
+			theme:Bind(track, { BackgroundColor3 = "Track", BackgroundTransparency = "TrackAlpha" })
+			local fill = Create("Frame", {
+				Size = UDim2.fromScale(1, 1),
+				BackgroundColor3 = Color3.new(1, 1, 1),
+				BackgroundTransparency = remember and 0 or 1,
+				Parent = track,
+			})
+			Utility.Corner(fill, Utility.Pill)
+			Base.Gradient(theme, fill, 0)
+			local knob = Create("Frame", {
+				AnchorPoint = Vector2.new(0, 0.5),
+				Position = UDim2.new(0, remember and 21 or 3, 0.5, 0),
+				Size = UDim2.fromOffset(16, 16),
+				BackgroundColor3 = Color3.new(1, 1, 1),
+				Parent = track,
+			})
+			Utility.Corner(knob, Utility.Pill)
+
+			maid:Give(row.MouseButton1Click:Connect(function()
+				remember = not remember
+				Tween(fill, { BackgroundTransparency = remember and 0 or 1 }, 0.2)
+				Tween(knob, { Position = UDim2.new(0, remember and 21 or 3, 0.5, 0) }, 0.22)
+			end))
+		end
+
+		--// verify button
+		-- centered anchor so the press animation shrinks toward the middle
+		local verifyHolder = Create("Frame", {
+			Position = UDim2.fromOffset(PAD, verifyY),
+			Size = UDim2.new(1, -PAD * 2, 0, 46),
+			BackgroundTransparency = 1,
+			Parent = card,
+		})
+		submitButton = Create("TextButton", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromScale(1, 1),
+			BackgroundColor3 = Color3.new(1, 1, 1),
+			Parent = verifyHolder,
+		})
+		Utility.Corner(submitButton, 12)
+		Base.Gradient(theme, submitButton, 0)
+		submitLabel = Create("TextLabel", {
+			Size = UDim2.fromScale(1, 1),
+			Text = "Verify Key",
+			Font = Enum.Font.GothamBold,
+			TextSize = 16,
+			TextXAlignment = Enum.TextXAlignment.Center,
+			Parent = submitButton,
+		})
+		theme:Bind(submitLabel, { TextColor3 = "OnAccent" })
+
+		maid:Give(submitButton.MouseButton1Click:Connect(function()
+			Tween(submitButton, { Size = UDim2.new(1, -8, 1, -6) }, 0.08)
+			task.delay(0.09, function()
+				if submitButton.Parent then
+					Tween(submitButton, { Size = UDim2.fromScale(1, 1) }, 0.35, Enum.EasingStyle.Back)
+				end
+			end)
+			submit()
+		end))
+
+		--// links
+		KeyUI.LinkButtons = {}
+		if hasLinks then
+			local row = Create("Frame", {
+				Position = UDim2.fromOffset(PAD, linksY),
+				Size = UDim2.new(1, -PAD * 2, 0, 34),
+				BackgroundTransparency = 1,
+				Parent = card,
+			})
+			local gap = 8
+			local count = #links
+			Utility.List(row, gap, Enum.FillDirection.Horizontal)
+			for index, link in ipairs(links) do
+				local button = Create("TextButton", {
+					Size = UDim2.new(1 / count, -gap * (count - 1) / count, 1, 0),
+					LayoutOrder = index,
+					BackgroundColor3 = Color3.new(1, 1, 1),
+					Parent = row,
+				})
+				KeyUI.LinkButtons[index] = button
+				Utility.Corner(button, 10)
+				theme:Bind(button, { BackgroundColor3 = "Card", BackgroundTransparency = "CardHoverAlpha" })
+				local buttonStroke = Utility.Stroke(button, Color3.new(1, 1, 1), 0.9, 1)
+				theme:Bind(buttonStroke, { Color = "Stroke", Transparency = "StrokeAlpha" })
+
+				-- icon + text centered as one group
+				local group = Create("Frame", {
+					AnchorPoint = Vector2.new(0.5, 0.5),
+					Position = UDim2.fromScale(0.5, 0.5),
+					Size = UDim2.fromOffset(0, 20),
+					AutomaticSize = Enum.AutomaticSize.X,
+					BackgroundTransparency = 1,
+					Parent = button,
+				})
+				Utility.List(group, 8, Enum.FillDirection.Horizontal, nil, Enum.VerticalAlignment.Center)
+				if link.Icon then
+					local iconSlot = Create("Frame", { Size = UDim2.fromOffset(18, 18), BackgroundTransparency = 1, LayoutOrder = 1, Parent = group })
+					local icon = Icons.Create(link.Icon, iconSlot)
+					if icon then
+						Icons.BindImage(theme, icon, "Accent")
+					else
+						iconSlot:Destroy()
+					end
+				end
+				local text = Create("TextLabel", {
+					Size = UDim2.fromOffset(0, 20),
+					AutomaticSize = Enum.AutomaticSize.X,
+					Text = link.Title or "Link",
+					Font = Enum.Font.GothamBold,
+					TextSize = 14,
+					LayoutOrder = 2,
+					Parent = group,
+				})
+				theme:Bind(text, { TextColor3 = "Text" })
+
+				maid:Give(button.MouseButton1Click:Connect(function()
+					if link.Callback then
+						Utility.SafeCall(link.Callback)
+					elseif link.Link then
+						-- executors cannot open a browser, so the link goes to the clipboard
+						if Compat.SetClipboard(link.Link) then
+							setStatus("Link copied to your clipboard.", "success")
+						else
+							setStatus(link.Link, "info")
+						end
+					end
+				end))
+			end
+		end
+
+		shell:Show()
+		if not Compat.IsMobile then
+			task.delay(0.5, function()
+				if box and box.Parent then
+					box:CaptureFocus()
+				end
+			end)
+		end
+	end
+
+	--// start: a saved key that still validates skips the UI entirely -------------------------
+	task.spawn(function()
+		if canSave then
+			local saved = Compat.ReadFile(keyPath)
+			saved = saved and trim(saved) or ""
+			if saved ~= "" then
+				local valid = runValidate(saved)
+				if valid then
+					Utility.SafeCall(opts.OnSuccess, saved)
+					finish(saved)
+					return
+				end
+				Compat.DeleteFile(keyPath)
+			end
+		end
+		if not finished then
+			build()
+		end
+	end)
+
+	return KeyUI
+end
+end
+
+__modules["components/Loading"] = function(Import)
+--// Loading UI: terminal-style loading card. The behavior (scrambled title, typed fake logs, progress that
+--// follows real stages, staggered enter / exit) is the Mugiwara Hub loading screen; only the look follows
+--// the active Mugiwara theme.
+--//
+--//   local Loader = MugiwaraUI:Loading({ Title = "Mugiwara Hub", Owner = "Honami", Version = "v1.0.0" })
+--//   Loader:SetStatus("Loading modules")
+--//   Loader:SetProgress(40, 70)     -- jump to 40%, then creep up to 70% while the stage runs
+--//   Loader:Log("Fetching data", "info")
+--//   Loader:Finish("Welcome!")      -- the loader never ends on its own
+--//   Loader.Finished:Wait()
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+
+local Utility = Import("core/Utility")
+local Compat = Import("core/Compat")
+local Base = Import("components/Base")
+local Shell = Import("components/Shell")
+
+local Create, Tween = Utility.Create, Utility.Tween
+
+local DEFAULT_LOGS = {
+	"Establishing secure connection",
+	"Verifying key session",
+	"Fetching UI library",
+	"Decrypting payload",
+	"Scanning game environment",
+	"Resolving game modules",
+	"Mounting global tabs",
+	"Syncing configuration",
+	"Allocating memory blocks",
+	"Compiling feature modules",
+	"Checking for updates",
+	"Optimizing render pipeline",
+}
+
+local SCRAMBLE_CHARS = "!@#$%&*<>?/\\|01ABCDEFXZ"
+local HEX_CHARS = "0123456789ABCDEF"
+local ENTER_STAGGER = 0.1
+local EXIT_STAGGER = 0.06
+
+local function randomHex(length)
+	local out = table.create(length)
+	for index = 1, length do
+		local pick = math.random(1, #HEX_CHARS)
+		out[index] = string.sub(HEX_CHARS, pick, pick)
+	end
+	return table.concat(out)
+end
+
+local function hex(color)
+	return "#" .. Utility.ToHex(color)
+end
+
+-- opts: Title, Owner, Version, Terminal (window title), Prompt, Logs (fake log lines), MaxLogLines, InstantCover
+return function(library, opts)
+	opts = opts or {}
+	local theme = library.Theme
+	local tokens = theme.Tokens
+
+	-- the previous loader (if any) is replaced instead of stacking
+	if library._loader and not library._loader.Destroyed then
+		library._loader:Destroy()
+	end
+
+	-- palette comes from the active theme
+	local C = {
+		accent = tokens.Accent,
+		gold = tokens.Gradient[2] or tokens.Accent,
+		text = tokens.Text,
+		dim = tokens.SubText,
+		ok = tokens.Success,
+		warn = tokens.Warning,
+		err = tokens.Danger,
+	}
+	local config = {
+		Title = opts.Title or "Mugiwara Hub",
+		Owner = opts.Owner or opts.Author,
+		Version = opts.Version,
+		Terminal = opts.Terminal or "root@mugiwara: ~/loader",
+		Prompt = opts.Prompt or "root@mugiwara",
+		MaxLogLines = opts.MaxLogLines or 6,
+		Logs = opts.Logs or DEFAULT_LOGS,
+	}
+
+	local state = {
+		finishing = false,
+		finished = false,
+		titleBusy = false,
+		status = "Initializing",
+		startTime = os.clock(),
+		lastHex = 0,
+		-- Progress: with Loader:SetProgress(target, cap) the percent follows the real stages (jumps to
+		-- `target`, then creeps toward `cap`). Without it a time curve is used.
+		manualProgress = false,
+		target = 0,
+		cap = 0,
+	}
+	local logOrder = 0
+
+	local shell = Shell.new(library, {
+		Name = "Loading",
+		Size = Vector2.new(460, 312),
+		Backdrop = 0.35,
+		InstantBackdrop = opts.InstantCover == true,
+		IgnoreGuiInset = true,
+		MinScale = 0.55,
+		MaxScale = 1.3,
+	})
+	local maid = shell.Maid
+	local card = shell.Card
+
+	--// content blocks: separate CanvasGroups so they enter / leave one after another
+	local content = Create("Frame", { Name = "Content", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Parent = card })
+
+	local function createBlock(name)
+		return Create("CanvasGroup", {
+			Name = name,
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			GroupTransparency = 1,
+			Position = UDim2.fromOffset(0, 14),
+			Parent = content,
+		})
+	end
+
+	local HeaderBlock = createBlock("HeaderBlock")
+	local DividerBlock = createBlock("DividerBlock")
+	local TerminalBlock = createBlock("TerminalBlock")
+	local ProgressBlock = createBlock("ProgressBlock")
+	local FooterBlock = createBlock("FooterBlock")
+	local Blocks = { HeaderBlock, DividerBlock, TerminalBlock, ProgressBlock, FooterBlock }
+
+	--// header
+	local Title = Create("TextLabel", {
+		Name = "Title",
+		Position = UDim2.fromOffset(20, 16),
+		Size = UDim2.new(1, -60, 0, 32),
+		Font = Enum.Font.GothamBlack,
+		Text = "",
+		TextSize = 26,
+		Parent = HeaderBlock,
+	})
+	Base.Gradient(theme, Title, 0)
+
+	local PulseDot = Create("Frame", {
+		Name = "PulseDot",
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -22, 0, 32),
+		Size = UDim2.fromOffset(9, 9),
+		BackgroundColor3 = C.accent,
+		Parent = HeaderBlock,
+	})
+	Utility.Corner(PulseDot, Utility.Pill)
+
+	local parts = {}
+	if config.Owner then
+		table.insert(parts, string.format('Owner: <font color="%s">%s</font>', hex(C.accent), config.Owner))
+	end
+	if config.Version and config.Version ~= "" then
+		table.insert(parts, string.format('Version: <font color="%s">%s</font>', hex(C.gold), config.Version))
+	end
+	local subtitle = Create("TextLabel", {
+		Name = "Subtitle",
+		Position = UDim2.fromOffset(20, 50),
+		Size = UDim2.new(1, -40, 0, 16),
+		Font = Enum.Font.Code,
+		RichText = true,
+		TextSize = 13,
+		TextColor3 = C.dim,
+		Text = table.concat(parts, "   |   "),
+		Parent = HeaderBlock,
+	})
+	theme:Bind(subtitle, { TextColor3 = "SubText" })
+
+	--// divider (grows from the center when its block enters)
+	local DIVIDER_SIZE = UDim2.new(1, -40, 0, 1)
+	local DividerLine = Create("Frame", {
+		Name = "Divider",
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 76),
+		Size = UDim2.new(0, 0, 0, 1),
+		BackgroundColor3 = C.dim,
+		Parent = DividerBlock,
+	})
+	Base.Gradient(theme, DividerLine, 0).Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1),
+		NumberSequenceKeypoint.new(0.5, 0.3),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+
+	--// terminal
+	local TerminalBox = Create("Frame", {
+		Name = "Terminal",
+		Position = UDim2.fromOffset(20, 86),
+		Size = UDim2.new(1, -40, 0, 150),
+		BackgroundColor3 = Color3.new(0, 0, 0),
+		ClipsDescendants = true,
+		Parent = TerminalBlock,
+	})
+	Utility.Corner(TerminalBox, 8)
+	theme:Bind(TerminalBox, { BackgroundColor3 = "Field", BackgroundTransparency = "FieldAlpha" })
+	local terminalStroke = Utility.Stroke(TerminalBox, C.dim, 0.8, 1)
+	theme:Bind(terminalStroke, { Color = "Stroke", Transparency = "StrokeAlpha" })
+
+	for index, color in ipairs({ C.err, C.warn, C.ok }) do
+		local dot = Create("Frame", {
+			Position = UDim2.fromOffset(10 + (index - 1) * 14, 7),
+			Size = UDim2.fromOffset(8, 8),
+			BackgroundColor3 = color,
+			Parent = TerminalBox,
+		})
+		Utility.Corner(dot, Utility.Pill)
+	end
+
+	local terminalTitle = Create("TextLabel", {
+		Name = "TerminalTitle",
+		Position = UDim2.fromOffset(56, 3),
+		Size = UDim2.new(1, -66, 0, 16),
+		Font = Enum.Font.Code,
+		TextSize = 12,
+		Text = config.Terminal,
+		Parent = TerminalBox,
+	})
+	theme:Bind(terminalTitle, { TextColor3 = "SubText" })
+
+	local terminalRule = Create("Frame", {
+		Position = UDim2.fromOffset(0, 22),
+		Size = UDim2.new(1, 0, 0, 1),
+		BackgroundColor3 = Color3.new(1, 1, 1),
+		Parent = TerminalBox,
+	})
+	theme:Bind(terminalRule, { BackgroundColor3 = "Stroke", BackgroundTransparency = "StrokeAlpha" })
+
+	local LogFrame = Create("Frame", {
+		Name = "Logs",
+		Position = UDim2.fromOffset(10, 28),
+		Size = UDim2.new(1, -20, 1, -50),
+		BackgroundTransparency = 1,
+		ClipsDescendants = true,
+		Parent = TerminalBox,
+	})
+	Create("UIListLayout", {
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		VerticalAlignment = Enum.VerticalAlignment.Bottom,
+		Padding = UDim.new(0, 2),
+		Parent = LogFrame,
+	})
+
+	local PROMPT_TEXT = string.format(
+		'<font color="%s">%s</font><font color="%s">:~$</font> ',
+		hex(C.gold),
+		config.Prompt,
+		hex(C.dim)
+	)
+	local PromptLabel = Create("TextLabel", {
+		Name = "Prompt",
+		Position = UDim2.new(0, 10, 1, -20),
+		Size = UDim2.new(1, -20, 0, 16),
+		Font = Enum.Font.Code,
+		RichText = true,
+		TextSize = 12,
+		TextColor3 = C.text,
+		Text = PROMPT_TEXT,
+		Parent = TerminalBox,
+	})
+
+	-- scanline sweeping down the terminal
+	local Scanline = Create("Frame", {
+		Name = "Scanline",
+		Position = UDim2.fromScale(0, -0.05),
+		Size = UDim2.new(1, 0, 0, 2),
+		BackgroundColor3 = C.gold,
+		BackgroundTransparency = 0.85,
+		ZIndex = 5,
+		Parent = TerminalBox,
+	})
+
+	local function loop(inst, info, goal)
+		local tween = TweenService:Create(inst, info, goal)
+		tween:Play()
+		maid:Give(function()
+			tween:Cancel()
+		end)
+	end
+	loop(Scanline, TweenInfo.new(2.4, Enum.EasingStyle.Linear, Enum.EasingDirection.In, -1), { Position = UDim2.fromScale(0, 1.05) })
+
+	--// status + progress
+	local StatusLabel = Create("TextLabel", {
+		Name = "Status",
+		Position = UDim2.fromOffset(20, 246),
+		Size = UDim2.new(1, -100, 0, 16),
+		Font = Enum.Font.Code,
+		TextSize = 13,
+		TextColor3 = C.text,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Parent = ProgressBlock,
+	})
+
+	local PercentLabel = Create("TextLabel", {
+		Name = "Percent",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -20, 0, 246),
+		Size = UDim2.fromOffset(70, 16),
+		Font = Enum.Font.GothamBold,
+		TextSize = 13,
+		TextColor3 = C.gold,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		Text = "0%",
+		Parent = ProgressBlock,
+	})
+
+	local BAR_SIZE = UDim2.new(1, -40, 0, 6)
+	local BarTrack = Create("Frame", {
+		Name = "BarTrack",
+		Position = UDim2.fromOffset(20, 268),
+		Size = UDim2.new(0, 0, 0, 6),
+		BackgroundColor3 = Color3.new(1, 1, 1),
+		ClipsDescendants = true,
+		Parent = ProgressBlock,
+	})
+	Utility.Corner(BarTrack, Utility.Pill)
+	theme:Bind(BarTrack, { BackgroundColor3 = "Track", BackgroundTransparency = "TrackAlpha" })
+
+	local Fill = Create("Frame", {
+		Name = "Fill",
+		Size = UDim2.fromScale(0, 1),
+		BackgroundColor3 = Color3.new(1, 1, 1),
+		Parent = BarTrack,
+	})
+	Utility.Corner(Fill, Utility.Pill)
+	local FillGradient = Base.Gradient(theme, Fill, 0)
+
+	local Shimmer = Create("Frame", {
+		Name = "Shimmer",
+		Position = UDim2.fromScale(-0.3, 0),
+		Size = UDim2.fromScale(0.3, 1),
+		BackgroundColor3 = Color3.new(1, 1, 1),
+		ZIndex = 2,
+		Parent = BarTrack,
+	})
+	Create("UIGradient", {
+		Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1),
+			NumberSequenceKeypoint.new(0.5, 0.55),
+			NumberSequenceKeypoint.new(1, 1),
+		}),
+		Parent = Shimmer,
+	})
+	loop(Shimmer, TweenInfo.new(1.3, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1), { Position = UDim2.fromScale(1, 0) })
+
+	-- random hex line under the bar (decoration)
+	local HexFooter = Create("TextLabel", {
+		Name = "HexFooter",
+		Position = UDim2.fromOffset(20, 284),
+		Size = UDim2.new(1, -40, 0, 14),
+		Font = Enum.Font.Code,
+		TextSize = 11,
+		TextColor3 = C.dim,
+		TextTransparency = 0.45,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Parent = FooterBlock,
+	})
+
+	--// text animations ---------------------------------------------------------------
+	-- title "decodes" letter by letter
+	local function scrambleText(label, finalText, duration)
+		state.titleBusy = true
+		local length = #finalText
+		local stepTime = duration / math.max(length, 1)
+
+		for revealed = 0, length do
+			if not label.Parent then
+				break
+			end
+			local out = { string.sub(finalText, 1, revealed) }
+			for index = revealed + 1, length do
+				if string.sub(finalText, index, index) == " " then
+					table.insert(out, " ")
+				else
+					local pick = math.random(1, #SCRAMBLE_CHARS)
+					table.insert(out, string.sub(SCRAMBLE_CHARS, pick, pick))
+				end
+			end
+			label.Text = table.concat(out)
+			task.wait(stepTime)
+		end
+
+		if label.Parent then
+			label.Text = finalText
+		end
+		state.titleBusy = false
+	end
+
+	local LOG_TYPES = {
+		info = { tag = "*", color = C.warn },
+		ok = { tag = "+", color = C.ok },
+		warn = { tag = "!", color = C.warn },
+		error = { tag = "x", color = C.err },
+	}
+
+	-- one log line with a typing effect
+	local function addLog(message, kind)
+		if not LogFrame.Parent then
+			return nil
+		end
+
+		local logType = LOG_TYPES[kind] or LOG_TYPES.info
+		local timeStr = os.date("%H:%M:%S")
+		logOrder = logOrder + 1
+
+		local richText = string.format(
+			'<font color="%s">[%s]</font> <font color="%s">[%s]</font> %s',
+			hex(C.dim),
+			timeStr,
+			hex(logType.color),
+			logType.tag,
+			message
+		)
+		-- length without RichText tags (for the typing effect)
+		local plainLength = #string.format("[%s] [%s] %s", timeStr, logType.tag, message)
+
+		local line = Create("TextLabel", {
+			Name = "Log",
+			Size = UDim2.new(1, 0, 0, 15),
+			Font = Enum.Font.Code,
+			RichText = true,
+			TextSize = 12,
+			TextColor3 = C.text,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			LayoutOrder = logOrder,
+			MaxVisibleGraphemes = 0,
+			Text = richText,
+			Parent = LogFrame,
+		})
+
+		-- drop the oldest lines when there are too many
+		local lines = {}
+		for _, child in ipairs(LogFrame:GetChildren()) do
+			if child:IsA("TextLabel") then
+				table.insert(lines, child)
+			end
+		end
+		table.sort(lines, function(a, b)
+			return a.LayoutOrder < b.LayoutOrder
+		end)
+		while #lines > config.MaxLogLines do
+			table.remove(lines, 1):Destroy()
+		end
+
+		task.spawn(function()
+			for index = 1, plainLength do
+				if not line.Parent then
+					return
+				end
+				line.MaxVisibleGraphemes = index
+				task.wait(0.012)
+			end
+			if line.Parent then
+				line.MaxVisibleGraphemes = -1
+			end
+		end)
+
+		return { Label = line, Base = richText }
+	end
+
+	-- appends " OK" / " RETRY" to a log line
+	local function completeLog(entry, word, color)
+		if not entry or not entry.Label.Parent then
+			return
+		end
+		entry.Label.MaxVisibleGraphemes = -1
+		entry.Label.Text = string.format('%s <font color="%s">%s</font>', entry.Base, hex(color), word)
+	end
+
+	--// per-frame loop -----------------------------------------------------------------
+	local percentValue = Instance.new("NumberValue")
+	percentValue.Value = 0
+	maid:Give(percentValue)
+
+	maid:Give(RunService.RenderStepped:Connect(function(dt)
+		local now = os.clock()
+
+		PulseDot.BackgroundTransparency = 0.35 + 0.35 * math.sin(now * 5)
+		PromptLabel.Text = PROMPT_TEXT .. ((math.floor(now * 2.5) % 2 == 0) and "_" or "")
+
+		-- percent: follows the real stages with SetProgress, otherwise a time curve.
+		-- Never goes down and stops at 99% until Finish is called.
+		if not state.finishing then
+			local current = percentValue.Value
+			if state.manualProgress then
+				if current < state.target then
+					current = current + (state.target - current) * (1 - math.exp(-dt * 7))
+				elseif current < state.cap then
+					current = current + (state.cap - current) * (1 - math.exp(-dt / 5))
+				end
+			else
+				current = math.max(current, 99 * (1 - math.exp(-(now - state.startTime) / 12)))
+			end
+			percentValue.Value = math.min(current, 99)
+		end
+		local percent = percentValue.Value
+		PercentLabel.Text = string.format("%d%%", math.floor(percent))
+		Fill.Size = UDim2.fromScale(percent / 100, 1)
+
+		if not state.finished then
+			local dots = string.rep(".", math.floor(now * 3) % 4)
+			StatusLabel.Text = state.status .. dots
+		end
+
+		-- random hex (rate limited)
+		if now - state.lastHex > 0.07 then
+			state.lastHex = now
+			HexFooter.Text = string.format(
+				"0x%s  %s %s  %s  MEM:0x%s",
+				randomHex(8),
+				randomHex(4),
+				randomHex(4),
+				randomHex(6),
+				randomHex(4)
+			)
+		end
+	end))
+
+	--// API -------------------------------------------------------------------------------
+	local Loader = { Gui = shell.Gui, Destroyed = false }
+
+	-- Loader.FinishEvent:Fire(message) finishes the loader; Loader.Finished fires once the UI is gone
+	Loader.FinishEvent = Utility.Signal.new()
+	local closed = Utility.Signal.new(true)
+	Loader.Finished = closed
+
+	function Loader:SetStatus(text)
+		if state.finishing then
+			return
+		end
+		state.status = tostring(text)
+	end
+
+	-- `target` = percent to reach quickly, `cap` = slow creep limit while the stage is still running
+	function Loader:SetProgress(target, cap)
+		if state.finishing then
+			return
+		end
+		state.manualProgress = true
+		state.target = math.max(state.target, tonumber(target) or 0)
+		state.cap = math.max(state.target, tonumber(cap) or state.target)
+	end
+
+	-- kind: "info" | "ok" | "warn" | "error"
+	function Loader:Log(text, kind)
+		return addLog(tostring(text), kind)
+	end
+
+	-- removes the UI immediately, without the exit animation
+	function Loader:Destroy()
+		if self.Destroyed then
+			return
+		end
+		self.Destroyed = true
+		shell:Destroy()
+		if Compat.Env.MugiwaraLoader == self then
+			Compat.Env.MugiwaraLoader = nil
+		end
+	end
+
+	function Loader:Finish(message)
+		if state.finishing then
+			return
+		end
+		state.finishing = true
+
+		task.spawn(function()
+			state.status = "Finalizing"
+			addLog("All modules loaded successfully", "ok")
+
+			Tween(percentValue, { Value = 100 }, 0.6)
+			task.wait(0.35)
+			FillGradient.Color = ColorSequence.new(C.ok)
+			local player = Players.LocalPlayer
+			addLog(message or ("Access granted. Welcome, " .. (player and player.DisplayName or "player")), "ok")
+			task.wait(0.35)
+
+			state.finished = true
+			StatusLabel.Text = "Ready"
+			StatusLabel.TextColor3 = C.ok
+			PulseDot.BackgroundColor3 = C.ok
+			scrambleText(Title, config.Title, 0.35)
+			task.wait(0.6)
+
+			-- exit: the reverse of the enter, bottom block first, then the card and backdrop
+			for index = #Blocks, 1, -1 do
+				local block = Blocks[index]
+				task.delay((#Blocks - index) * EXIT_STAGGER, function()
+					Tween(block, { GroupTransparency = 1, Position = UDim2.fromOffset(0, 12) }, 0.28, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+					if block == DividerBlock then
+						Tween(DividerLine, { Size = UDim2.new(0, 0, 0, 1) }, 0.28, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+					elseif block == ProgressBlock then
+						Tween(BarTrack, { Size = UDim2.new(0, 0, 0, 6) }, 0.28, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+					end
+				end)
+			end
+			task.wait(#Blocks * EXIT_STAGGER + 0.05)
+
+			shell:Hide(function()
+				Loader.Destroyed = true
+				if Compat.Env.MugiwaraLoader == Loader then
+					Compat.Env.MugiwaraLoader = nil
+				end
+				closed:Fire()
+			end)
+		end)
+	end
+
+	Loader.FinishEvent:Connect(function(message)
+		Loader:Finish(message)
+	end)
+
+	-- reachable from other scripts (executor)
+	Compat.Env.MugiwaraLoader = Loader
+	library._loader = Loader
+
+	--// enter animation ---------------------------------------------------------------------
+	shell:Show()
+
+	-- blocks slide up + fade in one after another; the divider and the bar grow as their block shows
+	for index, block in ipairs(Blocks) do
+		task.delay(0.2 + (index - 1) * ENTER_STAGGER, function()
+			if not block.Parent then
+				return
+			end
+			Tween(block, { GroupTransparency = 0, Position = UDim2.fromOffset(0, 0) }, 0.5)
+			if block == DividerBlock then
+				Tween(DividerLine, { Size = DIVIDER_SIZE }, 0.6)
+			elseif block == ProgressBlock then
+				Tween(BarTrack, { Size = BAR_SIZE }, 0.6)
+			end
+		end)
+	end
+	task.delay(0.25, scrambleText, Title, config.Title, 0.9)
+
+	task.delay(0.3, function()
+		addLog("Booting " .. config.Title .. ((config.Version and config.Version ~= "") and (" " .. config.Version) or ""), "ok")
+	end)
+
+	-- fake log loop, runs until Finish
+	task.spawn(function()
+		task.wait(0.9)
+		local index = 0
+		while not state.finishing and shell.Gui.Parent do
+			index = index % #config.Logs + 1
+			local entry = addLog(config.Logs[index] .. "...", "info")
+			task.wait(math.random(40, 95) / 100)
+			if state.finishing then
+				break
+			end
+
+			-- now and then a "warning" so it looks real
+			if math.random() < 0.12 then
+				completeLog(entry, "RETRY", C.warn)
+				task.wait(0.3)
+				addLog("Packet timeout, retrying connection", "warn")
+			else
+				completeLog(entry, "OK", C.ok)
+			end
+			task.wait(math.random(15, 40) / 100)
+		end
+	end)
+
+	-- small glitch on the title every few seconds
+	task.spawn(function()
+		while shell.Gui.Parent and not state.finishing do
+			task.wait(math.random(35, 65) / 10)
+			if not state.finishing and not state.titleBusy and Title.Parent then
+				local original = config.Title
+				local position = math.random(1, #original)
+				local pick = math.random(1, #SCRAMBLE_CHARS)
+				Title.Text = string.sub(original, 1, position - 1) .. string.sub(SCRAMBLE_CHARS, pick, pick) .. string.sub(original, position + 1)
+				Title.Position = UDim2.fromOffset(22, 16)
+				task.wait(0.06)
+				Title.Position = UDim2.fromOffset(19, 16)
+				task.wait(0.05)
+				Title.Position = UDim2.fromOffset(20, 16)
+				Title.Text = original
+			end
+		end
+	end)
+
+	return Loader
+end
+end
+
+__modules["components/Neon"] = function(Import)
+--// Neon: the shared look of every Mugiwara surface (Window, Key UI, Loading UI):
+--// soft glow rings, a rotating gradient border and the glass wash + sheen layers.
+
+local Utility = Import("core/Utility")
+local Base = Import("components/Base")
+
+local Create = Utility.Create
+local WHITE = Color3.new(1, 1, 1)
+
+local Neon = {}
+
+-- Concentric strokes around the surface fake a soft neon glow without any image asset.
+local LAYERS = {
+	{ pad = 0, thickness = 3, transparency = 0.5 },
+	{ pad = 3, thickness = 7, transparency = 0.8 },
+	{ pad = 10, thickness = 14, transparency = 0.92 },
+}
+
+-- Glow rings behind the surface. Returns { { Stroke, Base } } so callers can fade them in and out.
+function Neon.Glow(parent, theme, maid, radius)
+	local entries = {}
+	for _, layer in ipairs(LAYERS) do
+		local ring = Create("Frame", {
+			Name = "Glow",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.new(1, layer.pad * 2, 1, layer.pad * 2),
+			BackgroundTransparency = 1,
+			Parent = parent,
+		})
+		Utility.Corner(ring, radius + layer.pad)
+		local stroke = Utility.Stroke(ring, WHITE, layer.transparency, layer.thickness)
+		Utility.Spin(maid, Base.Gradient(theme, stroke, 0, "CycleSeq"), 9)
+		table.insert(entries, { Stroke = stroke, Base = layer.transparency })
+	end
+	return entries
+end
+
+-- Thin rotating border drawn above the surface.
+function Neon.Border(parent, theme, maid, radius, zindex)
+	local border = Create("Frame", {
+		Name = "Border",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		ZIndex = zindex or 5,
+		Parent = parent,
+	})
+	Utility.Corner(border, radius)
+	local stroke = Utility.Stroke(border, WHITE, 0.3, 1.5)
+	Utility.Spin(maid, Base.Gradient(theme, stroke, 0, "CycleSeq"), 9)
+	return { Stroke = stroke, Base = 0.3 }
+end
+
+-- Accent wash + glass sheen inside a surface.
+-- One UIGradient per instance: Roblox ignores extra ones, so color and transparency share it.
+function Neon.Glass(surface, theme)
+	local wash = Create("Frame", { Name = "Wash", Size = UDim2.fromScale(1, 1), BackgroundColor3 = WHITE, Parent = surface })
+	Base.Gradient(theme, wash, 35).Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.86),
+		NumberSequenceKeypoint.new(0.5, 1),
+		NumberSequenceKeypoint.new(1, 0.9),
+	})
+
+	local sheen = Create("Frame", { Name = "Sheen", Size = UDim2.fromScale(1, 1), BackgroundColor3 = WHITE, Parent = surface })
+	Create("UIGradient", {
+		Rotation = 20,
+		Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.92),
+			NumberSequenceKeypoint.new(0.35, 1),
+			NumberSequenceKeypoint.new(1, 0.97),
+		}),
+		Parent = sheen,
+	})
+end
+
+return Neon
+end
+
 __modules["components/Notification"] = function(Import)
 --// Notifications: glass toasts stacked at the bottom-right of the screen.
 
@@ -1026,6 +2385,161 @@ return function(window, opts)
 	window.ActivePopup = popup
 	return popup
 end
+end
+
+__modules["components/Shell"] = function(Import)
+--// Shell: a centered glass card with the Mugiwara neon look, its own ScreenGui and open / close
+--// animations. The Key UI and the Loading UI are built on it (the main Window has its own chrome).
+
+local HttpService = game:GetService("HttpService")
+
+local Utility = Import("core/Utility")
+local Compat = Import("core/Compat")
+local Neon = Import("components/Neon")
+
+local Create, Tween = Utility.Create, Utility.Tween
+
+local RADIUS = 16
+
+local Shell = {}
+Shell.__index = Shell
+
+-- opts: Name, Size (Vector2), Backdrop (transparency to dim to, nil = none), InstantBackdrop,
+--       IgnoreGuiInset, MinScale, MaxScale, Glow (default true)
+function Shell.new(library, opts)
+	local theme = library.Theme
+	local self = setmetatable({}, Shell)
+	self.Library = library
+	self.Theme = theme
+	self.Maid = Utility.Maid.new()
+	self.DesignSize = opts.Size
+	self.MinScale = opts.MinScale or 0.4
+	self.MaxScale = opts.MaxScale or 1
+	self.BackdropTarget = opts.Backdrop
+	self.Neon = {}
+	local maid = self.Maid
+
+	local gui = Create("ScreenGui", {
+		Name = "MugiwaraUI_" .. (opts.Name or "Shell") .. "_" .. string.sub(HttpService:GenerateGUID(false), 1, 8),
+		ResetOnSpawn = false,
+		IgnoreGuiInset = opts.IgnoreGuiInset == true,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+		DisplayOrder = 10002,
+	})
+	Compat.Protect(gui)
+	gui.Parent = Compat.GetGuiParent()
+	maid:Give(gui)
+	self.Gui = gui
+
+	if opts.Backdrop then
+		self.Backdrop = Create("Frame", {
+			Name = "Backdrop",
+			Size = UDim2.fromScale(1, 1),
+			BackgroundColor3 = Color3.fromRGB(8, 4, 2),
+			BackgroundTransparency = opts.InstantBackdrop and opts.Backdrop or 1,
+			Parent = gui,
+		})
+	end
+
+	local main = Create("Frame", {
+		Name = "Main",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(self.DesignSize.X, self.DesignSize.Y),
+		BackgroundTransparency = 1,
+		Parent = gui,
+	})
+	self.Main = main
+	self.UIScale = Create("UIScale", { Parent = main })
+
+	-- centered anchor: UIScale scales around the anchor point, so the pop animation grows from the middle
+	local pop = Create("Frame", {
+		Name = "Pop",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Parent = main,
+	})
+	self.Pop = pop
+	self.PopScale = Create("UIScale", { Scale = 0.88, Parent = pop })
+
+	if opts.Glow ~= false then
+		self.Neon = Neon.Glow(pop, theme, maid, RADIUS)
+	end
+
+	local card = Create("CanvasGroup", {
+		Name = "Card",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.new(0, 0, 0),
+		GroupTransparency = 1,
+		Parent = pop,
+	})
+	Utility.Corner(card, RADIUS)
+	theme:Bind(card, { BackgroundColor3 = "Popup", BackgroundTransparency = "PopupAlpha" })
+	Neon.Glass(card, theme)
+	self.Card = card
+
+	table.insert(self.Neon, Neon.Border(pop, theme, maid, RADIUS, 5))
+	for _, entry in ipairs(self.Neon) do
+		entry.Stroke.Transparency = 1
+	end
+
+	maid:Give(gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		self:_fit()
+	end))
+	self:_fit()
+	return self
+end
+
+function Shell:_fit()
+	local area = self.Gui.AbsoluteSize
+	if area.X <= 0 or area.Y <= 0 then
+		local camera = workspace.CurrentCamera
+		area = camera and camera.ViewportSize or Vector2.new(1280, 720)
+	end
+	local fit = math.min((area.X - 32) / self.DesignSize.X, (area.Y - 32) / self.DesignSize.Y)
+	self.UIScale.Scale = Utility.Clamp(fit, self.MinScale, self.MaxScale)
+end
+
+function Shell:Show()
+	if self.Backdrop and self.Backdrop.BackgroundTransparency > self.BackdropTarget then
+		Tween(self.Backdrop, { BackgroundTransparency = self.BackdropTarget }, 0.5)
+	end
+	Tween(self.PopScale, { Scale = 1 }, 0.7, Enum.EasingStyle.Back)
+	Tween(self.Card, { GroupTransparency = 0 }, 0.5)
+	for _, entry in ipairs(self.Neon) do
+		Tween(entry.Stroke, { Transparency = entry.Base }, 0.5)
+	end
+end
+
+-- Plays the exit animation, then destroys everything and calls onDone.
+function Shell:Hide(onDone)
+	if self.Hiding then
+		return
+	end
+	self.Hiding = true
+	Tween(self.PopScale, { Scale = 0.88 }, 0.35, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+	Tween(self.Card, { GroupTransparency = 1 }, 0.35)
+	for _, entry in ipairs(self.Neon) do
+		Tween(entry.Stroke, { Transparency = 1 }, 0.3)
+	end
+	if self.Backdrop then
+		Tween(self.Backdrop, { BackgroundTransparency = 1 }, 0.4)
+	end
+	task.delay(0.45, function()
+		self:Destroy()
+		if onDone then
+			onDone()
+		end
+	end)
+end
+
+function Shell:Destroy()
+	self.Maid:Clean()
+end
+
+return Shell
 end
 
 __modules["components/Tab"] = function(Import)
@@ -1341,7 +2855,6 @@ __modules["components/Window"] = function(Import)
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
 local Lighting = game:GetService("Lighting")
 local HttpService = game:GetService("HttpService")
 
@@ -1355,6 +2868,7 @@ local Tab = Import("components/Tab")
 local TabSection = Import("components/TabSection")
 local Dialog = Import("components/Dialog")
 local Popup = Import("components/Popup")
+local Neon = Import("components/Neon")
 
 local Create, Tween = Utility.Create, Utility.Tween
 local WHITE = Color3.new(1, 1, 1)
@@ -1363,13 +2877,6 @@ local TOPBAR = 54
 local FOOTER = 56
 local MARGIN = 24 -- breathing room kept around a maximized window
 local MORPH_TIME = 0.45
-
--- Concentric strokes around the window fake a soft neon glow without any image asset.
-local NEON_LAYERS = {
-	{ pad = 0, thickness = 3, transparency = 0.5 },
-	{ pad = 3, thickness = 7, transparency = 0.8 },
-	{ pad = 10, thickness = 14, transparency = 0.92 },
-}
 
 local Window = {}
 Window.__index = Window
@@ -1384,23 +2891,14 @@ local function toVector(size, fallback)
 	return fallback
 end
 
-local function spin(maid, gradient, seconds)
-	local tween = TweenService:Create(
-		gradient,
-		TweenInfo.new(seconds, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, -1),
-		{ Rotation = gradient.Rotation + 360 }
-	)
-	tween:Play()
-	maid:Give(function()
-		tween:Cancel()
-	end)
-end
-
 -- opts: Title, Subtitle, Version, Icon, Size, MinSize, MaxSize, Resizable, Folder, ToggleKey, Blur,
---       Neon, OpenButton, ConfirmClose, ShowUser, SideBarWidth, ThemeSwitcher, Background
+--       Neon, OpenButton, ConfirmClose, ShowUser, SideBarWidth, ThemeSwitcher, Background, Theme
 function Window.new(library, opts)
 	opts = opts or {}
 	local theme = library.Theme
+	if opts.Theme then
+		theme:Set(opts.Theme) -- unknown names are ignored
+	end
 
 	local self = setmetatable({}, Window)
 	self.Library = library
@@ -1459,24 +2957,8 @@ function Window.new(library, opts)
 	})
 	self.PopScale = Create("UIScale", { Parent = pop })
 
-	--// neon glow
-	self.Neon = {}
-	if opts.Neon ~= false then
-		for _, layer in ipairs(NEON_LAYERS) do
-			local ring = Create("Frame", {
-				Name = "Glow",
-				AnchorPoint = Vector2.new(0.5, 0.5),
-				Position = UDim2.fromScale(0.5, 0.5),
-				Size = UDim2.new(1, layer.pad * 2, 1, layer.pad * 2),
-				BackgroundTransparency = 1,
-				Parent = pop,
-			})
-			Utility.Corner(ring, 16 + layer.pad)
-			local stroke = Utility.Stroke(ring, WHITE, layer.transparency, layer.thickness)
-			spin(maid, Base.Gradient(theme, stroke, 0, "CycleSeq"), 9)
-			table.insert(self.Neon, { Stroke = stroke, Base = layer.transparency })
-		end
-	end
+	--// neon glow (rings behind the window); entries are faded in / out by Open / Close
+	self.Neon = opts.Neon ~= false and Neon.Glow(pop, theme, maid, 16) or {}
 
 	--// glass body (CanvasGroup so the whole window fades as one)
 	local win = Create("CanvasGroup", {
@@ -1508,37 +2990,10 @@ function Window.new(library, opts)
 		Parent = win,
 	})
 
-	-- one UIGradient per instance: Roblox ignores extra ones, so color + transparency share it
-	local wash = Create("Frame", { Name = "Wash", Size = UDim2.fromScale(1, 1), BackgroundColor3 = WHITE, Parent = win })
-	Base.Gradient(theme, wash, 35).Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.86),
-		NumberSequenceKeypoint.new(0.5, 1),
-		NumberSequenceKeypoint.new(1, 0.9),
-	})
+	Neon.Glass(win, theme)
 
-	local sheen = Create("Frame", { Name = "Sheen", Size = UDim2.fromScale(1, 1), BackgroundColor3 = WHITE, Parent = win })
-	Create("UIGradient", {
-		Rotation = 20,
-		Transparency = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 0.92),
-			NumberSequenceKeypoint.new(0.35, 1),
-			NumberSequenceKeypoint.new(1, 0.97),
-		}),
-		Parent = sheen,
-	})
-
-	--// neon border
-	local border = Create("Frame", {
-		Name = "Border",
-		Size = UDim2.fromScale(1, 1),
-		BackgroundTransparency = 1,
-		ZIndex = 5,
-		Parent = pop,
-	})
-	Utility.Corner(border, 16)
-	local borderStroke = Utility.Stroke(border, WHITE, 0.3, 1.5)
-	spin(maid, Base.Gradient(theme, borderStroke, 0, "CycleSeq"), 9)
-	table.insert(self.Neon, { Stroke = borderStroke, Base = 0.3 })
+	--// neon border (above the window)
+	table.insert(self.Neon, Neon.Border(pop, theme, maid, 16, 5))
 
 	--// topbar
 	local topbar = Create("Frame", {
@@ -1914,9 +3369,9 @@ function Window.new(library, opts)
 		Utility.Corner(button, Utility.Pill)
 		theme:Bind(button, { BackgroundColor3 = "Popup", BackgroundTransparency = "PopupAlpha" })
 		local ring = Utility.Stroke(button, WHITE, 0.15, 2)
-		spin(maid, Base.Gradient(theme, ring, 0, "CycleSeq"), 6)
+		Utility.Spin(maid, Base.Gradient(theme, ring, 0, "CycleSeq"), 6)
 		local halo = Utility.Stroke(button, WHITE, 0.7, 6)
-		spin(maid, Base.Gradient(theme, halo, 0, "CycleSeq"), 6)
+		Utility.Spin(maid, Base.Gradient(theme, halo, 0, "CycleSeq"), 6)
 
 		local mark = Create("TextLabel", {
 			Size = UDim2.fromScale(1, 1),
@@ -4203,6 +5658,13 @@ function Compat.HttpGet(url)
 end
 
 --// Clipboard -----------------------------------------------------------------
+-- Reading the clipboard is only offered by some executors; nil when unavailable.
+Compat.GetClipboard = (getclipboard or readclipboard) and function()
+	local reader = getclipboard or readclipboard
+	local ok, text = pcall(reader)
+	return ok and type(text) == "string" and text or nil
+end or nil
+
 function Compat.SetClipboard(text)
 	local setter = setclipboard or toclipboard or (Clipboard and Clipboard.set)
 	if setter then
@@ -5168,6 +6630,77 @@ function Utility.Tween(inst, goal, duration, style, direction)
 	return tween
 end
 
+-- Endless rotation of a UIGradient (neon borders). Stopped through the maid.
+function Utility.Spin(maid, gradient, seconds)
+	local tween = TweenService:Create(
+		gradient,
+		TweenInfo.new(seconds, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, -1),
+		{ Rotation = gradient.Rotation + 360 }
+	)
+	tween:Play()
+	maid:Give(function()
+		tween:Cancel()
+	end)
+	return tween
+end
+
+--// Signal: small event with Connect / Once / Wait / Fire (used for Loader.Finished, KeyUI.Completed...)
+-- A sticky signal remembers its last Fire, so Wait() called afterwards returns immediately.
+local Signal = {}
+Signal.__index = Signal
+
+function Signal.new(sticky)
+	return setmetatable({ Handlers = {}, Waiters = {}, Sticky = sticky == true, Fired = false, Args = nil }, Signal)
+end
+
+function Signal:Connect(fn)
+	local entry = { Fn = fn }
+	table.insert(self.Handlers, entry)
+	return {
+		Disconnect = function()
+			local index = table.find(self.Handlers, entry)
+			if index then
+				table.remove(self.Handlers, index)
+			end
+		end,
+	}
+end
+
+function Signal:Once(fn)
+	local connection
+	connection = self:Connect(function(...)
+		connection.Disconnect()
+		fn(...)
+	end)
+	return connection
+end
+
+function Signal:Fire(...)
+	if self.Sticky then
+		self.Fired = true
+		self.Args = table.pack(...)
+	end
+	for _, entry in ipairs(table.clone(self.Handlers)) do
+		task.spawn(entry.Fn, ...)
+	end
+	local waiters = self.Waiters
+	self.Waiters = {}
+	for _, thread in ipairs(waiters) do
+		task.spawn(thread, ...)
+	end
+end
+
+-- Yields the calling thread until the signal fires; returns the fired arguments.
+function Signal:Wait()
+	if self.Sticky and self.Fired then
+		return table.unpack(self.Args, 1, self.Args.n)
+	end
+	table.insert(self.Waiters, (coroutine.running())) -- parentheses: keep only the thread
+	return coroutine.yield()
+end
+
+Utility.Signal = Signal
+
 --// Math / formatting
 function Utility.Clamp(value, min, max)
 	return math.max(min, math.min(max, value))
@@ -5329,6 +6862,8 @@ local IconSets = Import("core/IconSets")
 local Theme = Import("core/Theme")
 local Window = Import("components/Window")
 local Notification = Import("components/Notification")
+local KeySystem = Import("components/KeySystem")
+local Loading = Import("components/Loading")
 
 -- Re-executing the script replaces the previous instance instead of stacking UIs.
 local env = Compat.Env
@@ -5339,7 +6874,7 @@ if env.MugiwaraUI and type(env.MugiwaraUI.Destroy) == "function" then
 end
 
 local Library = {
-	Version = "0.3.0",
+	Version = "0.4.0",
 	Windows = {},
 	Theme = Theme.new("Gear5"),
 	Icons = Icons,
@@ -5349,6 +6884,16 @@ local Library = {
 
 function Library:CreateWindow(opts)
 	return Window.new(self, opts)
+end
+
+-- Key UI: a separate card that validates a key with your Validate(key) function. KeyUI:Wait() -> key | nil
+function Library:KeySystem(opts)
+	return KeySystem(self, opts)
+end
+
+-- Loading UI: terminal-style loader. Drive it with SetStatus / SetProgress / Log, end it with Finish().
+function Library:Loading(opts)
+	return Loading(self, opts)
 end
 
 function Library:Notify(opts)
@@ -5385,6 +6930,12 @@ end
 function Library:Destroy()
 	for window in pairs(self.Windows) do
 		window:Destroy()
+	end
+	if self._loader then
+		self._loader:Destroy()
+	end
+	if self._keyUI then
+		self._keyUI:Close()
 	end
 	if self._notifyGui then
 		self._notifyGui:Destroy()

@@ -18,7 +18,7 @@ const ALLOWED = new Set(
 		"_G _VERSION Import " +
 		// executor globals — every use must be guarded / optional
 		"getgenv gethui cloneref identifyexecutor syn protect_gui writefile readfile isfile makefolder isfolder " +
-		"delfile listfiles setclipboard toclipboard Clipboard loadstring request http_request getcustomasset getsynasset"
+		"delfile listfiles setclipboard toclipboard Clipboard loadstring request http_request getcustomasset getsynasset getclipboard readclipboard"
 	).split(" ")
 );
 

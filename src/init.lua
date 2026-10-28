@@ -6,6 +6,8 @@ local IconSets = Import("core/IconSets")
 local Theme = Import("core/Theme")
 local Window = Import("components/Window")
 local Notification = Import("components/Notification")
+local KeySystem = Import("components/KeySystem")
+local Loading = Import("components/Loading")
 
 -- Re-executing the script replaces the previous instance instead of stacking UIs.
 local env = Compat.Env
@@ -26,6 +28,16 @@ local Library = {
 
 function Library:CreateWindow(opts)
 	return Window.new(self, opts)
+end
+
+-- Key UI: a separate card that validates a key with your Validate(key) function. KeyUI:Wait() -> key | nil
+function Library:KeySystem(opts)
+	return KeySystem(self, opts)
+end
+
+-- Loading UI: terminal-style loader. Drive it with SetStatus / SetProgress / Log, end it with Finish().
+function Library:Loading(opts)
+	return Loading(self, opts)
 end
 
 function Library:Notify(opts)
@@ -62,6 +74,12 @@ end
 function Library:Destroy()
 	for window in pairs(self.Windows) do
 		window:Destroy()
+	end
+	if self._loader then
+		self._loader:Destroy()
+	end
+	if self._keyUI then
+		self._keyUI:Close()
 	end
 	if self._notifyGui then
 		self._notifyGui:Destroy()

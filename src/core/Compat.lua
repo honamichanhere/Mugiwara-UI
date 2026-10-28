@@ -259,6 +259,13 @@ function Compat.HttpGet(url)
 end
 
 --// Clipboard -----------------------------------------------------------------
+-- Reading the clipboard is only offered by some executors; nil when unavailable.
+Compat.GetClipboard = (getclipboard or readclipboard) and function()
+	local reader = getclipboard or readclipboard
+	local ok, text = pcall(reader)
+	return ok and type(text) == "string" and text or nil
+end or nil
+
 function Compat.SetClipboard(text)
 	local setter = setclipboard or toclipboard or (Clipboard and Clipboard.set)
 	if setter then

@@ -2,7 +2,6 @@
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
 local Lighting = game:GetService("Lighting")
 local HttpService = game:GetService("HttpService")
 
@@ -16,6 +15,7 @@ local Tab = Import("components/Tab")
 local TabSection = Import("components/TabSection")
 local Dialog = Import("components/Dialog")
 local Popup = Import("components/Popup")
+local Neon = Import("components/Neon")
 
 local Create, Tween = Utility.Create, Utility.Tween
 local WHITE = Color3.new(1, 1, 1)
@@ -24,13 +24,6 @@ local TOPBAR = 54
 local FOOTER = 56
 local MARGIN = 24 -- breathing room kept around a maximized window
 local MORPH_TIME = 0.45
-
--- Concentric strokes around the window fake a soft neon glow without any image asset.
-local NEON_LAYERS = {
-	{ pad = 0, thickness = 3, transparency = 0.5 },
-	{ pad = 3, thickness = 7, transparency = 0.8 },
-	{ pad = 10, thickness = 14, transparency = 0.92 },
-}
 
 local Window = {}
 Window.__index = Window
@@ -45,23 +38,14 @@ local function toVector(size, fallback)
 	return fallback
 end
 
-local function spin(maid, gradient, seconds)
-	local tween = TweenService:Create(
-		gradient,
-		TweenInfo.new(seconds, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, -1),
-		{ Rotation = gradient.Rotation + 360 }
-	)
-	tween:Play()
-	maid:Give(function()
-		tween:Cancel()
-	end)
-end
-
 -- opts: Title, Subtitle, Version, Icon, Size, MinSize, MaxSize, Resizable, Folder, ToggleKey, Blur,
---       Neon, OpenButton, ConfirmClose, ShowUser, SideBarWidth, ThemeSwitcher, Background
+--       Neon, OpenButton, ConfirmClose, ShowUser, SideBarWidth, ThemeSwitcher, Background, Theme
 function Window.new(library, opts)
 	opts = opts or {}
 	local theme = library.Theme
+	if opts.Theme then
+		theme:Set(opts.Theme) -- unknown names are ignored
+	end
 
 	local self = setmetatable({}, Window)
 	self.Library = library
@@ -120,24 +104,8 @@ function Window.new(library, opts)
 	})
 	self.PopScale = Create("UIScale", { Parent = pop })
 
-	--// neon glow
-	self.Neon = {}
-	if opts.Neon ~= false then
-		for _, layer in ipairs(NEON_LAYERS) do
-			local ring = Create("Frame", {
-				Name = "Glow",
-				AnchorPoint = Vector2.new(0.5, 0.5),
-				Position = UDim2.fromScale(0.5, 0.5),
-				Size = UDim2.new(1, layer.pad * 2, 1, layer.pad * 2),
-				BackgroundTransparency = 1,
-				Parent = pop,
-			})
-			Utility.Corner(ring, 16 + layer.pad)
-			local stroke = Utility.Stroke(ring, WHITE, layer.transparency, layer.thickness)
-			spin(maid, Base.Gradient(theme, stroke, 0, "CycleSeq"), 9)
-			table.insert(self.Neon, { Stroke = stroke, Base = layer.transparency })
-		end
-	end
+	--// neon glow (rings behind the window); entries are faded in / out by Open / Close
+	self.Neon = opts.Neon ~= false and Neon.Glow(pop, theme, maid, 16) or {}
 
 	--// glass body (CanvasGroup so the whole window fades as one)
 	local win = Create("CanvasGroup", {
@@ -169,37 +137,10 @@ function Window.new(library, opts)
 		Parent = win,
 	})
 
-	-- one UIGradient per instance: Roblox ignores extra ones, so color + transparency share it
-	local wash = Create("Frame", { Name = "Wash", Size = UDim2.fromScale(1, 1), BackgroundColor3 = WHITE, Parent = win })
-	Base.Gradient(theme, wash, 35).Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.86),
-		NumberSequenceKeypoint.new(0.5, 1),
-		NumberSequenceKeypoint.new(1, 0.9),
-	})
+	Neon.Glass(win, theme)
 
-	local sheen = Create("Frame", { Name = "Sheen", Size = UDim2.fromScale(1, 1), BackgroundColor3 = WHITE, Parent = win })
-	Create("UIGradient", {
-		Rotation = 20,
-		Transparency = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 0.92),
-			NumberSequenceKeypoint.new(0.35, 1),
-			NumberSequenceKeypoint.new(1, 0.97),
-		}),
-		Parent = sheen,
-	})
-
-	--// neon border
-	local border = Create("Frame", {
-		Name = "Border",
-		Size = UDim2.fromScale(1, 1),
-		BackgroundTransparency = 1,
-		ZIndex = 5,
-		Parent = pop,
-	})
-	Utility.Corner(border, 16)
-	local borderStroke = Utility.Stroke(border, WHITE, 0.3, 1.5)
-	spin(maid, Base.Gradient(theme, borderStroke, 0, "CycleSeq"), 9)
-	table.insert(self.Neon, { Stroke = borderStroke, Base = 0.3 })
+	--// neon border (above the window)
+	table.insert(self.Neon, Neon.Border(pop, theme, maid, 16, 5))
 
 	--// topbar
 	local topbar = Create("Frame", {
@@ -575,9 +516,9 @@ function Window.new(library, opts)
 		Utility.Corner(button, Utility.Pill)
 		theme:Bind(button, { BackgroundColor3 = "Popup", BackgroundTransparency = "PopupAlpha" })
 		local ring = Utility.Stroke(button, WHITE, 0.15, 2)
-		spin(maid, Base.Gradient(theme, ring, 0, "CycleSeq"), 6)
+		Utility.Spin(maid, Base.Gradient(theme, ring, 0, "CycleSeq"), 6)
 		local halo = Utility.Stroke(button, WHITE, 0.7, 6)
-		spin(maid, Base.Gradient(theme, halo, 0, "CycleSeq"), 6)
+		Utility.Spin(maid, Base.Gradient(theme, halo, 0, "CycleSeq"), 6)
 
 		local mark = Create("TextLabel", {
 			Size = UDim2.fromScale(1, 1),

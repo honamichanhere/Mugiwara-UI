@@ -34,6 +34,45 @@ See [`examples/showcase.lua`](examples/showcase.lua) for every element.
 
 To test local changes without pushing: run `npm run build`, copy `dist/main.lua` into your executor's `workspace` folder as `MugiwaraUI.lua`, then run the dummy. It loads that local file first and only falls back to GitHub when it is missing.
 
+## The flow: Key UI > Loading UI > Main UI
+
+Three pieces of the same set, all drawn in the active theme:
+
+```lua
+local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/main/dist/main.lua"))()
+
+-- 1) Key UI: a separate card. Validate is YOUR check (HTTP request, hash...), it may yield.
+local KeyUI = MugiwaraUI:KeySystem({
+    Title = "Mugiwara Hub",
+    Folder = "MugiwaraHub",
+    Links = { { Title = "Get Key", Icon = "lucide:external-link", Link = "https://example.com/key" } },
+    Validate = function(key)
+        return key == "secret", "That key is not valid" -- true / false, message
+    end,
+})
+local key = KeyUI:Wait()       -- yields until accepted; nil when the user closed the card
+if not key then return end
+
+-- 2) Loading UI: the loader never ends on its own, call Finish()
+local Loader = MugiwaraUI:Loading({ Title = "Mugiwara Hub", Owner = "Honami", Version = "v1.0.0" })
+Loader:SetStatus("Loading modules")
+Loader:SetProgress(40, 70)     -- jump to 40%, then creep toward 70% while the stage runs
+Loader:Log("Fetching data", "info")
+Loader:Finish("Welcome!")
+Loader.Finished:Wait()         -- resumes when the loading card is gone
+
+-- 3) Main UI
+local Window = MugiwaraUI:CreateWindow({ Title = "Mugiwara Hub" })
+```
+
+Run [`examples/dummy-flow.lua`](examples/dummy-flow.lua) to see it (any key is accepted there).
+
+**Key UI options:** `Title`, `Subtitle`, `Icon`, `Note` (`false` hides it), `Placeholder`, `Folder`, `Validate(key)` (**required**, must return `true` to accept), `Links` (`{ Title, Link, Icon, Callback }`; a `Link` is copied to the clipboard because executors cannot open a browser), `SaveKey` (default `true`: shows the "Remember key" switch), `Remember` (switch starts on), `OnSuccess(key)`, `OnClose()`.
+Methods: `Wait()`, `Submit(key)`, `Close()`, `ClearSavedKey()`, `SetStatus(text, kind)`; `KeyUI.Completed` is a signal. When "Remember key" was on and the saved key still validates, the Key UI is skipped entirely and `Wait()` returns immediately.
+
+**Loading UI options:** `Title`, `Owner`, `Version`, `Terminal` (terminal window title), `Prompt`, `Logs` (list of fake log lines), `MaxLogLines`, `InstantCover`.
+Methods: `SetStatus(text)`, `SetProgress(target, cap)`, `Log(text, "info"|"ok"|"warn"|"error")`, `Finish(message)`, `Destroy()`; `Loader.Finished` (signal, `:Wait()` / `:Connect()`) and `Loader.FinishEvent:Fire()`. The running loader is also available as `getgenv().MugiwaraLoader`.
+
 ## Features
 
 - Glass window with animated neon border: drag, resize, **maximize**, minimize to a floating button, `RightShift` toggle
@@ -181,6 +220,21 @@ Window:LoadAutoConfig() -- call after the whole UI is built
 ```
 
 Files go to `<Folder>/configs/`. An index file keeps the list working on executors without `listfiles`.
+
+## Migrating from WindUI
+
+The element and option names follow WindUI where it was practical (`Tab`, `Button`, `Toggle`, `Slider` with `Value = { Min, Max, Default }`, `Dropdown`, `Input`, `Keybind`, `Colorpicker`, `Paragraph`, `Divider`, `Notify`, `Dialog`, `CreateWindow` with `Title` / `Icon` / `Folder` / `Size` / `Theme`), so simple hubs mostly port by changing the loader line. It is **not** a 1:1 replacement.
+
+Elements in WindUI's source tree and where they stand here:
+
+| WindUI | Mugiwara UI |
+| --- | --- |
+| Button, Toggle, Slider, Dropdown, Input, Keybind, Colorpicker, Paragraph, Divider, Section | available |
+| Key system | available as a separate Key UI (not a `CreateWindow` option) |
+| Code, ProgressBar, Image, Video, Viewport | **missing** |
+| Group, HStack, VStack, Space (layout containers) | **missing** (elements stack vertically) |
+
+Other differences to check when porting: config saving goes through `Flag` + `Window:SaveConfig` / `ConfigSection` (not WindUI's config manager API), sections can be nested at most 2 levels, and the sidebar group is `Window:TabSection`.
 
 ## Executor notes
 
