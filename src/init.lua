@@ -68,6 +68,12 @@ function Library:SetIconSet(name)
 	return IconSets.SetDefault(name)
 end
 
+-- Icons of the built-in controls: Chevron, Check, Close, Minus, Square, Restore.
+-- UI:SetGlyphs({ Close = "lucide:circle-x" }); false keeps the drawn version. Call it before CreateWindow.
+function Library:SetGlyphs(map)
+	Icons.SetGlyphs(map)
+end
+
 -- Downloads icon sets ahead of time (in the background) so the first icons do not wait on the network.
 function Library:PreloadIcons(...)
 	IconSets.Preload({ ... })

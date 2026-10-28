@@ -63,6 +63,11 @@ local BASE = {
 		rgb(255, 122, 26),
 		rgb(255, 52, 82),
 	},
+	-- Wallpaper: asset id / rbxassetid / URL drawn behind the window (nil = none); WallpaperAlpha: 0 solid .. 1 invisible.
+	-- Desc: one line shown under the name in the theme menu.
+	Wallpaper = nil,
+	WallpaperAlpha = 0.3,
+	Desc = nil,
 }
 
 local DEFAULT = "Gear 5"
@@ -84,6 +89,8 @@ Theme.Presets = {
 		Muted = rgb(142, 146, 164),
 		OnAccent = rgb(16, 18, 30),
 		Accent = rgb(255, 255, 255),
+		Wallpaper = "132136264088686",
+		Desc = "White and soft gold",
 		Gradient = {
 			rgb(255, 255, 255),
 			rgb(224, 234, 255),
@@ -100,6 +107,8 @@ Theme.Presets = {
 		Popup = rgb(10, 8, 10),
 		OnAccent = rgb(255, 255, 255),
 		Accent = rgb(240, 46, 58),
+		Wallpaper = "97664760089542",
+		Desc = "Black and red",
 		Gradient = {
 			rgb(255, 116, 116),
 			rgb(244, 56, 68),
@@ -115,6 +124,8 @@ Theme.Presets = {
 		Popup = rgb(22, 14, 6),
 		OnAccent = rgb(34, 14, 4),
 		Accent = rgb(255, 204, 52),
+		Wallpaper = "72569835503667",
+		Desc = "Yellow into red",
 		Gradient = {
 			rgb(255, 246, 160),
 			rgb(255, 208, 52),
@@ -124,7 +135,10 @@ Theme.Presets = {
 	},
 
 	-- Normal: orange, red, white, black and yellow (the BASE tokens).
-	["Normal"] = {},
+	["Normal"] = {
+		Wallpaper = "95252648321318",
+		Desc = "Orange, red and yellow",
+	},
 }
 
 local function resolve(name)

@@ -147,6 +147,14 @@ end
 
 Utility.Pill = UDim.new(1, 0)
 
+-- Asset ids as text. Converting a long number with tostring or .. may round or add ".0" (15+ digits are common now).
+function Utility.IdText(value)
+	if type(value) == "number" then
+		return string.format("%.0f", value)
+	end
+	return tostring(value)
+end
+
 --// Tweening
 function Utility.Tween(inst, goal, duration, style, direction)
 	local tween = TweenService:Create(

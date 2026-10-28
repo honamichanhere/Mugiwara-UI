@@ -222,6 +222,107 @@ check(UI:SetIconSet("craft") and UI.IconSets.Default == "craft", "default set ca
 check(not UI:SetIconSet("sfsymbols"), "sfsymbols cannot be selected")
 UI:SetIconSet("lucide")
 
+--// built-in glyphs are icons once the set is there (and stay drawn when it is not)
+local closeImage = Window.Frame:FindFirstChild("Close", true):FindFirstChild("Image")
+check(closeImage and closeImage.Image == "rbxassetid://903", "the close glyph is the lucide x icon")
+check(#Window.Frame:FindFirstChild("Close", true):GetChildren() == 1, "the drawn bars are replaced, not stacked")
+check(Window._squareGlyph:FindFirstChild("Image").Image == "rbxassetid://905", "maximize glyph is an icon")
+check(Window._restoreGlyph:FindFirstChild("Image").Image == "rbxassetid://906", "restore glyph is an icon")
+check(closeImage.ImageColor3 == UI.Theme.Tokens.SubText, "a glyph keeps the theme color it was bound to")
+UI:SetGlyphs({ Check = false })
+local drawnCheck = Main:Dropdown({ Title = "Drawn", Values = { "a" }, Value = "a" })
+check(drawnCheck.Rows()[1].Check:FindFirstChild("Image") == nil, "SetGlyphs(false) keeps the drawn glyph")
+UI:SetGlyphs({ Check = "lucide:check" })
+
+--// icon colors
+local function iconOf(element)
+	local slot = element.Top:FindFirstChild("IconHolder")
+	return slot and slot:FindFirstChild("Icon")
+end
+local plainIcon = Main:Toggle({ Title = "Plain", Icon = "lucide:house" })
+check(iconOf(plainIcon).ImageColor3 == UI.Theme.Tokens.Accent, "icons follow the theme accent by default")
+local red = Color3.fromRGB(255, 0, 0)
+local tinted = Main:Slider({ Title = "Tinted", Icon = "lucide:house", IconColor = red, Value = { Min = 0, Max = 1, Default = 0 } })
+check(iconOf(tinted).ImageColor3 == red, "IconColor sets a fixed color")
+UI:SetTheme("Gear 4")
+check(iconOf(tinted).ImageColor3 == red, "a custom icon color ignores theme changes")
+check(iconOf(plainIcon).ImageColor3 == UI.Theme.Tokens.Accent, "the default color still follows the theme")
+tinted:SetIconColor("Success")
+check(iconOf(tinted).ImageColor3 == UI.Theme.Tokens.Success, "a token name follows the theme")
+UI:SetTheme("Gear 3")
+check(iconOf(tinted).ImageColor3 == UI.Theme.Tokens.Success, "token colors are rebound on theme change")
+tinted:SetIconColor(nil)
+check(iconOf(tinted).ImageColor3 == UI.Theme.Tokens.Accent, "SetIconColor(nil) goes back to the accent")
+tinted:SetIconColor(red)
+tinted:SetIcon("lucide:settings")
+check(iconOf(tinted).Image == "rbxassetid://222" and iconOf(tinted).ImageColor3 == red, "SetIcon keeps the custom color")
+UI:SetTheme("Gear 5")
+
+local coloredTab = Window:Tab({ Title = "Colored", Icon = "lucide:house", IconColor = red })
+check(coloredTab.IconLabel.ImageColor3 == red, "tab IconColor")
+Window:SelectTab(coloredTab)
+check(coloredTab.IconLabel.ImageColor3 == red, "tab keeps IconColor when selected")
+local green = Color3.fromRGB(0, 255, 0)
+coloredTab:SetIconColor(red, green)
+check(coloredTab.IconLabel.ImageColor3 == green, "tab IconColorActive applies while selected")
+Window:SelectTab(Main)
+check(coloredTab.IconLabel.ImageColor3 == red, "tab goes back to the idle icon color")
+coloredTab:SetIconColor(nil)
+check(coloredTab.IconLabel.ImageColor3 == UI.Theme.Tokens.SubText, "tab icon color resets to the theme")
+local letterTab = Window:Tab({ Title = "Letter", IconColor = red })
+Window:SelectTab(Main)
+
+--// dropdown items with icons and descriptions
+local pickedItem
+local rich = Main:Dropdown({
+	Title = "Weapon",
+	Values = {
+		"Plain",
+		{ Title = "Sword", Icon = "lucide:sword", IconColor = red },
+		{ Title = "Gun", Desc = "Fast and loud" },
+		{ Title = "Staff", Desc = "Slow", Icon = "lucide:house" },
+	},
+	Value = "Sword",
+	Callback = function(value) pickedItem = value end,
+})
+local richRows = rich.Rows()
+check(#richRows == 4, "every item gets a row")
+check(richRows[1].Frame.Size.Y.Offset < richRows[3].Frame.Size.Y.Offset, "rows with a description are taller")
+check(richRows[1].Frame:FindFirstChildOfClass("UIStroke") ~= nil, "rows have a border")
+check(richRows[1].Frame:FindFirstChild("Icon", true) == nil and richRows[2].Frame:FindFirstChild("Icon", true) ~= nil, "icons only where requested")
+check(richRows[2].Frame:FindFirstChild("Icon", true).ImageColor3 == red, "item IconColor")
+local hasDesc = false
+for _, descendant in ipairs(richRows[3].Frame:GetDescendants()) do
+	hasDesc = hasDesc or (descendant:IsA("TextLabel") and descendant.Text == "Fast and loud")
+end
+check(hasDesc and richRows[3].Frame:FindFirstChild("Icon", true) == nil, "description-only row")
+check(richRows[2].Stroke.Color == UI.Theme.Tokens.Accent, "the selected row's border uses the accent")
+check(richRows[1].Stroke.Color == UI.Theme.Tokens.Stroke, "other rows use the stroke color")
+check(rich:Get() == "Sword", "Get returns the item's Title")
+check(rich.Frame:FindFirstChild("Icon", true) ~= nil, "the chosen item's icon shows in the closed button")
+richRows[3].Frame.MouseButton1Click:Fire()
+check(pickedItem == "Gun" and rich:Get() == "Gun", "choosing a described item returns its Title")
+rich:Set("Plain", true)
+check(rich:Get() == "Plain", "Set takes a Title")
+rich:Refresh({ { Title = "New", Desc = "fresh" }, "Old" }, false)
+check(#rich.Rows() == 2 and rich.Rows()[1].Frame.Size.Y.Offset == richRows[3].Frame.Size.Y.Offset, "Refresh accepts item tables")
+local describedSearch = Main:Dropdown({
+	Title = "Searchable",
+	Searchable = true,
+	Values = { { Title = "Alpha", Desc = "first letter" }, { Title = "Beta", Desc = "second" } },
+})
+local box
+for _, descendant in ipairs(describedSearch.Frame:GetDescendants()) do
+	if descendant:IsA("TextBox") then
+		box = descendant
+	end
+end
+box.Text = "second"
+check(#describedSearch.Rows() == 1 and describedSearch.Rows()[1].Name == "Beta", "search also looks at descriptions")
+UI:SetTheme("Gear 4")
+check(rich.Rows()[1].Stroke.Color == UI.Theme.Tokens.Stroke, "row borders follow the theme")
+UI:SetTheme("Gear 5")
+
 --// tab sections
 local group = Window:TabSection({ Title = "Group" })
 local groupTab = group:Tab({ Title = "InGroup" })
@@ -254,6 +355,59 @@ MOCK_ASSET_TYPES[557] = 10 -- Model: not an image
 Window:SetBackground("557")
 check(Window.BackgroundImage.Image == "rbxassetid://556", "non-image asset is rejected and leaves the wallpaper alone")
 Window:SetBackground("https://example.com/x.png") -- no request/getcustomasset in the mock: must not error
+
+--// theme wallpapers (each theme ships its own; 0.3 transparency)
+local themeImages = { ["Gear 5"] = 132136264088686, ["Gear 4"] = 97664760089542, ["Gear 3"] = 72569835503667, ["Normal"] = 95252648321318 }
+for _, id in pairs(themeImages) do
+	MOCK_ASSET_TYPES[id] = 1
+end
+local themed = UI:CreateWindow({ Title = "Themed", Folder = "ThemedTest", ThemeSwitcher = true })
+check(themed.BackgroundImage.Visible and themed.BackgroundImage.Image == "rbxassetid://132136264088686", "a window without Background shows the theme's wallpaper")
+check(themed.BackgroundImage.ImageTransparency == 0.3, "default wallpaper transparency is 0.3")
+UI:SetTheme("Gear 4")
+check(themed.BackgroundImage.Image == "rbxassetid://97664760089542", "the wallpaper follows the theme (Gear 4)")
+UI:SetTheme("Gear 3")
+check(themed.BackgroundImage.Image == "rbxassetid://72569835503667", "the wallpaper follows the theme (Gear 3)")
+UI:SetTheme("Normal")
+check(themed.BackgroundImage.Image == "rbxassetid://95252648321318", "the wallpaper follows the theme (Normal)")
+themed:SetBackground("rbxassetid://556", 0.5)
+UI:SetTheme("Gear 5")
+check(themed.BackgroundImage.Image == "rbxassetid://556" and themed.BackgroundImage.ImageTransparency == 0.5, "a custom wallpaper wins over the theme's")
+themed:SetBackground(nil)
+UI:SetTheme("Gear 4")
+check(not themed.BackgroundImage.Visible, "removing the wallpaper keeps it removed across theme changes")
+themed:UseThemeBackground()
+check(themed.BackgroundImage.Image == "rbxassetid://97664760089542", "UseThemeBackground brings the theme's wallpaper back")
+UI:AddTheme("Plain Custom", { Accent = Color3.fromRGB(10, 200, 10) })
+UI:SetTheme("Plain Custom")
+check(not themed.BackgroundImage.Visible, "a theme without a wallpaper shows none")
+UI:AddTheme("With Paper", { Wallpaper = "rbxassetid://777", WallpaperAlpha = 0.6 })
+UI:SetTheme("With Paper")
+check(themed.BackgroundImage.Image == "rbxassetid://777" and themed.BackgroundImage.ImageTransparency == 0.6, "custom themes can carry a wallpaper")
+UI:SetTheme("Gear 5")
+local bare = UI:CreateWindow({ Title = "Bare", Folder = "BareTest", Background = false })
+check(not bare.BackgroundImage.Visible, "Background = false disables the theme wallpaper")
+MOCK_ASSET_TYPES[424242] = 10 -- not an image: the theme wallpaper fails quietly
+UI:AddTheme("Broken Paper", { Wallpaper = "424242" })
+UI:SetTheme("Broken Paper")
+local quietWindow = UI:CreateWindow({ Title = "Quiet", Folder = "QuietTest" })
+check(not quietWindow.BackgroundImage.Visible, "an unusable theme wallpaper is skipped without a warning")
+UI:SetTheme("Gear 5")
+themed:Destroy()
+bare:Destroy()
+quietWindow:Destroy()
+
+--// theme menu
+local themeMenu = Window:OpenThemeMenu()
+local themeRows = {}
+for _, child in ipairs(themeMenu.Card:GetChildren()) do
+	if child:IsA("TextButton") then
+		table.insert(themeRows, child)
+	end
+end
+check(#themeRows >= 4 and themeRows[1].Size.Y.Offset >= 48, "theme menu rows")
+check(themeRows[1]:FindFirstChild("Swatch") ~= nil, "theme menu shows a preview swatch")
+themeMenu:Close()
 Window:SetVersion("")
 check(not Window.VersionPill.Visible, "version hidden")
 

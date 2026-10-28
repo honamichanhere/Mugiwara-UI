@@ -2,6 +2,14 @@
 
 Versions follow `package.json`. Every release is a git tag (`v0.6.1`, ...); `dist/main.lua` at that tag is what users load.
 
+## 0.8.0
+- **Icon colors**: `IconColor` on every element and tab (a `Color3` or a theme token name), `el:SetIconColor`, tabs also get `IconColorActive` / `tab:SetIconColor`. Default is still the theme accent; asset-id icons are tinted too.
+- **Dropdown items** can be tables `{ Title, Desc, Icon, IconColor }` (title only, title + icon, or everything). Rows have a border, the chosen item's icon shows in the closed button, search also matches descriptions.
+- **Built-in controls use lucide icons** (arrow, check, close, minimize, maximize, restore), drawn shapes stay as the offline fallback. `UI:SetGlyphs({ ... })` customizes them.
+- **Theme wallpapers**: every theme ships its own background (transparency 0.3), it follows theme changes. `Background = false`, `SetBackground` and `UseThemeBackground` control it; themes can add `Wallpaper` / `WallpaperAlpha` / `WallpaperDim`.
+- **Theme menu** redesigned: wider, mini-window previews, a description per theme, bordered rows.
+- Fix: asset ids given as numbers no longer lose digits when turned into text (`Utility.IdText`).
+
 ## 0.7.0
 - **Chat safeguards** (all optional and configurable in `server/worker/wrangler.toml`):
   - kill switch (on / read-only / off, one SQL command, no redeploy) and a matching state in the chat ("Read-only", "Disabled", locked input, unlocks by itself);

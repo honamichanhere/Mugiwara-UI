@@ -35,6 +35,11 @@ function Element:SetIcon(icon)
 	return self._applyIcon(icon)
 end
 
+-- color: a Color3, a theme token name ("Accent", "Success", "Danger"...) or nil for the theme accent
+function Element:SetIconColor(color)
+	return self._applyIcon(self._icon, color or false)
+end
+
 function Element:SetVisible(visible)
 	self.Frame.Visible = visible
 end
@@ -66,6 +71,17 @@ function Base.Gradient(theme, parent, rotation, kind)
 	local gradient = Create("UIGradient", { Rotation = rotation or 0, Parent = parent })
 	theme:Bind(gradient, { Color = kind or "GradientSeq" })
 	return gradient
+end
+
+-- Colors an icon image: a Color3 stays fixed, a token name ("Success") follows the theme, nil = theme accent.
+function Base.PaintIcon(theme, label, color)
+	if typeof(color) == "Color3" then
+		Icons.Tint(label, color)
+	elseif type(color) == "string" and theme.Tokens[color] ~= nil then
+		Icons.BindImage(theme, label, color)
+	else
+		Icons.BindImage(theme, label, "Accent")
+	end
 end
 
 -- Dark inset field used by inputs, dropdown buttons and so on.
@@ -205,7 +221,12 @@ function Base.Card(container, opts, rightWidth, rightHeight)
 
 	-- optional icon before the title (opts.Icon); the text column shrinks by the icon's width
 	local iconHolder, iconLabel
-	local function applyIcon(icon)
+	local iconColor = opts.IconColor
+	local function applyIcon(icon, color)
+		if color ~= nil then
+			iconColor = color or nil -- SetIconColor(nil) passes false: back to the theme accent
+		end
+		el._icon = icon
 		if iconLabel then
 			iconLabel:Destroy()
 			iconLabel = nil
@@ -222,7 +243,7 @@ function Base.Card(container, opts, rightWidth, rightHeight)
 			end
 			iconLabel = Icons.Create(icon, iconHolder)
 			if iconLabel then
-				Icons.BindImage(theme, iconLabel, "Accent")
+				Base.PaintIcon(theme, iconLabel, iconColor)
 			end
 		end
 		if iconHolder then

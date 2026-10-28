@@ -11,7 +11,7 @@ A glass + neon UI library for Roblox script hubs, themed after Luffy's **Gear 5*
 Load a **pinned version** (recommended). A tag never changes, so a later push cannot break the hubs that use it:
 
 ```lua
-local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.7.0/dist/main.lua"))()
+local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.8.0/dist/main.lua"))()
 ```
 
 `.../main/dist/main.lua` always serves the newest build (GitHub caches it for about 5 minutes). Available tags are listed in the
@@ -20,7 +20,7 @@ local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/ho
 ## Quick start
 
 ```lua
-local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.7.0/dist/main.lua"))()
+local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.8.0/dist/main.lua"))()
 
 local Window = MugiwaraUI:CreateWindow({
     Title = "Mugiwara Hub",
@@ -52,7 +52,7 @@ To test local changes without pushing: run `npm run build`, copy `dist/main.lua`
 Three pieces of the same set, all drawn in the active theme:
 
 ```lua
-local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.7.0/dist/main.lua"))()
+local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.8.0/dist/main.lua"))()
 
 -- 1) Key UI: a separate card. Validate is YOUR check (HTTP request, hash...), it may yield.
 local KeyUI = MugiwaraUI:KeySystem({
@@ -112,6 +112,7 @@ Methods: `SetStatus(text)`, `SetProgress(target, cap)`, `Log(text, "info"|"ok"|"
 | `MugiwaraUI:SetTheme(name)` / `GetTheme()` / `GetThemes()` | Switch themes live |
 | `MugiwaraUI:AddTheme(name, tokens)` | Register a theme (see below) |
 | `MugiwaraUI:SetIconSet(name)` / `PreloadIcons(...)` | Default icon set / download sets in the background |
+| `MugiwaraUI:SetGlyphs({ Close = "lucide:x", ... })` | Icons of the built-in controls (before `CreateWindow`) |
 | `MugiwaraUI.Icons.Register({ name = "rbxassetid://..." })` | Register icons usable as `Icon = "name"` |
 | `MugiwaraUI.ChatTransports` | `Http` and `Memory` transports for `tab:Chat` |
 | `MugiwaraUI.Version`, `MugiwaraUI.Compat` | Library version; executor helpers (`Executor`, `FilesSupported`, `SetClipboard`...) |
@@ -124,7 +125,7 @@ Methods: `SetStatus(text)`, `SetProgress(target, cap)`, `Log(text, "info"|"ok"|"
 | `Title`, `Subtitle` | `"Mugiwara UI"` | Topbar text |
 | `Version` | none | Badge next to the title, e.g. `"v1.2.0"` |
 | `ThemeSwitcher` | `true` | Theme menu button in the top bar |
-| `Background` | none | Wallpaper: `"rbxassetid://..."` or `{ Image, Transparency, Dim }` |
+| `Background` | the theme's wallpaper | `nil` = wallpaper of the current theme, `false` = none, or yours: `"rbxassetid://..."` / `{ Image, Transparency, Dim }` |
 | `Icon` | letter badge | Asset id / registered icon |
 | `Size` | `640x430` | `UDim2.fromOffset(w, h)` |
 | `MinSize`, `MaxSize` | `480x340`, `1000x760` | Resize limits |
@@ -142,7 +143,7 @@ Methods: `SetStatus(text)`, `SetProgress(target, cap)`, `Log(text, "info"|"ok"|"
 
 Dialogs: `Window:Dialog({ Title, Content, Buttons = { { Title, Style = "Primary" | "Secondary" | "Danger", Callback } } })`.
 
-Window methods: `Tab`, `TabSection`, `SelectTab`, `SidebarLabel`, `SidebarDivider`, `Dialog`, `Notify`, `SetTitle`, `SetVersion`, `SetTheme`, `OpenThemeMenu`, `SetBackground`, `SetBlur`, `SetScale`, `SetToggleKey`, `SetMaximized`, `ToggleMaximized`, `Open`, `Close`, `Toggle`, `Destroy`, `SaveConfig`, `LoadConfig`, `DeleteConfig`, `GetConfigs`, `LoadAutoConfig`, `ConfigSection`.
+Window methods: `Tab`, `TabSection`, `SelectTab`, `SidebarLabel`, `SidebarDivider`, `Dialog`, `Notify`, `SetTitle`, `SetVersion`, `SetTheme`, `OpenThemeMenu`, `SetBackground`, `UseThemeBackground`, `SetBlur`, `SetScale`, `SetToggleKey`, `SetMaximized`, `ToggleMaximized`, `Open`, `Close`, `Toggle`, `Destroy`, `SaveConfig`, `LoadConfig`, `DeleteConfig`, `GetConfigs`, `LoadAutoConfig`, `ConfigSection`.
 
 ### Layout: tabs and sections
 
@@ -177,6 +178,7 @@ tab:Button({ Title, Desc, Callback })
 tab:Toggle({ Title, Value, Callback(state) })
 tab:Slider({ Title, Value = { Min, Max, Default }, Step, Suffix, Callback(value) })
 tab:Dropdown({ Title, Values, Value, Multi, AllowNone, Searchable, Callback(value) })  -- el:Refresh(values, keepSelection)
+--   Values: "text" or { Title, Desc, Icon, IconColor } per item (title only, title + icon, or everything); Get() returns the Title
 tab:Input({ Title, Value, Placeholder, Numeric, Type = "Input" | "Textarea", Callback(text) })
 tab:Keybind({ Title, Value = "K", Callback(), OnChange(key) })
 tab:Colorpicker({ Title, Default, Transparency, Callback(color, transparency) })  -- opens a popup
@@ -205,6 +207,16 @@ Farm:Button({ Title = "Open", Icon = "craft:folder-stroke" })       -- "set:name
 local el = Farm:Label({ Title = "Dynamic", Icon = "solar:crown-bold" })
 el:SetIcon("geist:bell")                                            -- returns false if the icon was not found
 ```
+
+**Colors.** Icons follow the theme accent by default. `IconColor` (on any element, tab or dropdown item) takes a `Color3` (fixed) or a theme token name such as `"Success"` / `"Danger"` (follows the theme); `el:SetIconColor(color)` changes it later and `nil` goes back to the accent. Tabs: `IconColor` is used idle and selected; add `IconColorActive` for a different selected color, or `tab:SetIconColor(idle, active)`. Asset-id icons are tinted too.
+
+```lua
+Farm:Toggle({ Title = "Auto Farm", Icon = "lucide:flame", IconColor = Color3.fromRGB(255, 120, 40) })
+Farm:Button({ Title = "Heal", Icon = "lucide:heart", IconColor = "Success" })
+Window:Tab({ Title = "Combat", Icon = "lucide:swords", IconColor = Color3.fromRGB(255, 90, 90), IconColorActive = Color3.new(1, 1, 1) })
+```
+
+**Built-in controls** (dropdown arrow, check marks, close / minimize / maximize / restore) are lucide icons too. They start as drawn shapes so nothing is missing offline, and swap to the icon when it is available. Change them before `CreateWindow`: `MugiwaraUI:SetGlyphs({ Close = "lucide:circle-x", Check = "lucide:check-check" })` (names: `Chevron`, `Check`, `Close`, `Minus`, `Square`, `Restore`; any icon name or asset id; `false` keeps the drawn version).
 
 - Sets: `lucide` (default), `craft`, `geist`, `gravity`, `solar`. Change the default with `MugiwaraUI:SetIconSet("craft")`.
 - Plain asset ids (`"rbxassetid://123"`, `123`) and names added with `MugiwaraUI.Icons.Register({ name = id })` also work; those are drawn in their own colors.
@@ -270,7 +282,7 @@ Demo: [`examples/dummy-chat.lua`](examples/dummy-chat.lua).
 
 Two options, both optional:
 
-- **Wallpaper** (recommended): one image behind the whole window. The glass cards let it show through, so it reads as a single picture instead of cropped pieces. `Window:SetBackground("rbxassetid://...", 0.55, 0.45)` (image, transparency, dark scrim) or the `Background` window option.
+- **Wallpaper** (recommended): one image behind the whole window. The glass cards let it show through, so it reads as a single picture instead of cropped pieces. Every theme ships its own (transparency 0.3, it changes with the theme). Replace it with `Window:SetBackground("rbxassetid://...", 0.3, 0.45)` (image, transparency, dark scrim) or the `Background` window option; `Background = false` / `SetBackground(nil)` removes it and `Window:UseThemeBackground()` brings the theme's back.
 - **Image card**: `Image = "..."` on any element puts a picture inside that one card. It fades in from the right so the title stays readable.
 
 **Store images are Decals.** The id you copy from the Roblox Store / Toolbox is a *Decal* id, and an `ImageLabel` cannot display it. Mugiwara UI detects this and reads the real image out of the Decal for you (needs `game:GetObjects`, which most executors have). If it cannot, you get a notification saying so; then use the asset's **Image id** instead (in Studio: insert the decal, copy the `Texture` property). A notification also appears when Roblox refuses to load the image (private or moderated asset).
@@ -290,7 +302,7 @@ MugiwaraUI:AddTheme("Mine", {
 MugiwaraUI:SetTheme("Mine")
 ```
 
-Unspecified tokens fall back to the `Normal` palette. Tokens live in [`src/core/Theme.lua`](src/core/Theme.lua).
+A theme can carry its own picture: `Wallpaper = "rbxassetid://..."`, `WallpaperAlpha` (0.3) and `WallpaperDim` (0.4); `Desc` is the line shown in the theme menu. Unspecified tokens fall back to the `Normal` palette. Tokens live in [`src/core/Theme.lua`](src/core/Theme.lua).
 
 ### Configs
 

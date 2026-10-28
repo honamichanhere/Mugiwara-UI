@@ -66,9 +66,21 @@ return function(window, opts, parent)
 		BackgroundTransparency = 1,
 		Parent = button,
 	})
+	-- IconColor / IconColorActive: a Color3 or a theme token name; default is SubText idle, Text when selected
+	local customColor, customActive = opts.IconColor, opts.IconColorActive
+	local function iconTint(selected, tokens)
+		local custom = selected and (customActive or customColor) or customColor
+		if typeof(custom) == "Color3" then
+			return custom
+		elseif type(custom) == "string" and tokens[custom] ~= nil then
+			return tokens[custom]
+		end
+		return selected and tokens.Text or tokens.SubText
+	end
+
 	local iconImage, iconLetter = Icons.Create(opts.Icon, iconBox), nil
 	if iconImage then
-		Icons.Tint(iconImage, theme.Tokens.SubText)
+		Icons.Tint(iconImage, iconTint(false, theme.Tokens))
 		self.IconLabel = iconImage
 	else
 		iconLetter = Create("TextLabel", {
@@ -77,7 +89,7 @@ return function(window, opts, parent)
 			Font = Enum.Font.GothamBlack,
 			TextSize = 14,
 			TextXAlignment = Enum.TextXAlignment.Center,
-			TextColor3 = theme.Tokens.SubText,
+			TextColor3 = iconTint(false, theme.Tokens),
 			Parent = iconBox,
 		})
 	end
@@ -102,14 +114,15 @@ return function(window, opts, parent)
 		token = token + 1
 		local mine = token
 		local tint = state and theme.Tokens.Text or theme.Tokens.SubText
+		local iconColor = iconTint(state, theme.Tokens)
 
 		Tween(background, { BackgroundTransparency = state and 0.8 or 1 }, 0.25)
 		Tween(indicator, { Size = UDim2.fromOffset(3, state and 18 or 0) }, 0.3, Enum.EasingStyle.Back)
 		Tween(label, { TextColor3 = tint }, 0.2)
 		if iconImage then
-			Icons.Tint(iconImage, tint, 0.2)
+			Icons.Tint(iconImage, iconColor, 0.2)
 		else
-			Tween(iconLetter, { TextColor3 = tint }, 0.2)
+			Tween(iconLetter, { TextColor3 = iconColor }, 0.2)
 		end
 
 		if state then
@@ -130,10 +143,11 @@ return function(window, opts, parent)
 	local stopListening = theme:OnChange(function(tokens)
 		local tint = self.Selected and tokens.Text or tokens.SubText
 		label.TextColor3 = tint
+		local iconColor = iconTint(self.Selected, tokens)
 		if iconImage then
-			Icons.Tint(iconImage, tint)
+			Icons.Tint(iconImage, iconColor)
 		else
-			iconLetter.TextColor3 = tint
+			iconLetter.TextColor3 = iconColor
 		end
 	end)
 
@@ -158,6 +172,17 @@ return function(window, opts, parent)
 	function self:SetTitle(text)
 		self.Title = text
 		label.Text = text
+	end
+
+	-- color / active: Color3 or theme token name; nil goes back to the theme colors. `active` defaults to `color`.
+	function self:SetIconColor(color, active)
+		customColor, customActive = color, active
+		local tint = iconTint(self.Selected, theme.Tokens)
+		if iconImage then
+			Icons.Tint(iconImage, tint, 0.2)
+		else
+			Tween(iconLetter, { TextColor3 = tint }, 0.2)
+		end
 	end
 
 	function self:Destroy()

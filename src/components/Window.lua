@@ -576,11 +576,21 @@ function Window.new(library, opts)
 
 	self.ConfirmClose = opts.ConfirmClose ~= false
 	self:SetVersion(opts.Version)
+	-- Background: nil = the theme's own wallpaper, false = none, an asset id / URL / { Image, Transparency, Dim } = yours
 	if type(opts.Background) == "table" then
 		self:SetBackground(opts.Background.Image, opts.Background.Transparency, opts.Background.Dim)
+	elseif opts.Background == false then
+		self:SetBackground(nil)
 	elseif opts.Background then
 		self:SetBackground(opts.Background)
+	else
+		self:UseThemeBackground()
 	end
+	maid:Give(theme:OnChange(function()
+		if self._wallpaperMode == "theme" and not self.Destroyed then
+			self:_applyThemeWallpaper()
+		end
+	end))
 	self:_fit()
 	self:SetBlur(opts.Blur == true)
 	library.Windows[self] = true
@@ -785,32 +795,66 @@ end
 --// Background image ------------------------------------------------------------------
 -- image: asset id, "rbxassetid://...", or an http(s) URL (needs request + writefile + getcustomasset).
 -- transparency: 0-1, higher = fainter (default 0.55). dim: 0-1 dark scrim over the image (default 0.45).
--- Pass nil / "" to remove it.
+-- Pass nil / "" to remove it. A wallpaper set here replaces the theme's own one (UseThemeBackground brings it back).
 function Window:SetBackground(image, transparency, dim)
+	self._wallpaperMode = (image == nil or image == "") and "none" or "custom"
+	self:_showWallpaper(image, transparency or 0.55, dim or 0.45, false)
+end
+
+-- Every theme carries its own wallpaper (Theme tokens Wallpaper / WallpaperAlpha / WallpaperDim).
+-- This is the default; it follows the theme when it changes.
+function Window:UseThemeBackground()
+	self._wallpaperMode = "theme"
+	self:_applyThemeWallpaper()
+end
+
+function Window:_applyThemeWallpaper()
+	local tokens = self.Theme.Tokens
+	self:_showWallpaper(tokens.Wallpaper, tokens.WallpaperAlpha or 0.3, tokens.WallpaperDim or 0.4, true)
+end
+
+-- quiet: failures are not reported (the theme wallpaper is a nicety, not something the user asked for)
+function Window:_showWallpaper(image, transparency, dim, quiet)
 	local label, scrim = self.BackgroundImage, self.BackgroundScrim
+	self._wallpaperToken = (self._wallpaperToken or 0) + 1
+	local mine = self._wallpaperToken
+
 	if image == nil or image == "" then
+		self._wallpaperImage = nil
 		label.Visible = false
 		scrim.Visible = false
 		return
 	end
-	local target = transparency or 0.55
-	local shade = dim or 0.45
+
+	-- same picture as before (switching between themes that share it): only the strengths change
+	if image == self._wallpaperImage and label.Visible then
+		Tween(label, { ImageTransparency = transparency }, 0.4)
+		Tween(scrim, { BackgroundTransparency = 1 - dim }, 0.4)
+		return
+	end
+
 	task.spawn(function()
 		local asset, reason = Compat.ResolveImage(image, self.Folder)
-		if not label.Parent then
-			return
+		if not label.Parent or mine ~= self._wallpaperToken then
+			return -- the window is gone, or a newer wallpaper was requested while this one resolved
 		end
 		if not asset then
-			self:Notify({ Title = "Wallpaper", Content = reason or "Could not load the image.", Type = "warning", Duration = 6 })
+			if not quiet then
+				self:Notify({ Title = "Wallpaper", Content = reason or "Could not load the image.", Type = "warning", Duration = 6 })
+			end
 			return
+		end
+		self._wallpaperImage = image
+		if label.Image ~= asset then
+			label.ImageTransparency = 1 -- fade the new picture in instead of popping it
 		end
 		label.Image = asset
 		label.Visible = true
 		scrim.Visible = true
-		Tween(label, { ImageTransparency = target }, 0.6)
-		Tween(scrim, { BackgroundTransparency = 1 - shade }, 0.6)
+		Tween(label, { ImageTransparency = transparency }, 0.6)
+		Tween(scrim, { BackgroundTransparency = 1 - dim }, 0.6)
 
-		if Compat.ImageLoaded(label) == false then
+		if not quiet and Compat.ImageLoaded(label) == false then
 			self:Notify({
 				Title = "Wallpaper",
 				Content = "Roblox could not load this image. It may be private, moderated, or not an Image asset.",
@@ -841,13 +885,13 @@ function Window:OpenThemeMenu()
 	local library = self.Library
 	local theme = self.Theme
 	local popup = Popup(self, {
-		Width = 210,
+		Width = 268,
 		Dim = false,
 		AnchorPoint = Vector2.new(1, 0),
 		Position = UDim2.new(1, -14, 0, TOPBAR - 2),
 	})
 	local card = popup.Card
-	card:FindFirstChildOfClass("UIListLayout").Padding = UDim.new(0, 4)
+	card:FindFirstChildOfClass("UIListLayout").Padding = UDim.new(0, 6)
 
 	local caption = Create("TextLabel", {
 		Size = UDim2.new(1, 0, 0, 18),
@@ -859,51 +903,96 @@ function Window:OpenThemeMenu()
 	})
 	theme:Bind(caption, { TextColor3 = "Muted" })
 
+	local tokens = theme.Tokens
 	for index, name in ipairs(library:GetThemes()) do
 		local selected = name == library:GetTheme()
+		local preview = Theme.Preview(name)
 		local row = Create("TextButton", {
-			Size = UDim2.new(1, 0, 0, 34),
+			Name = name,
+			Size = UDim2.new(1, 0, 0, 50),
 			BackgroundColor3 = WHITE,
-			BackgroundTransparency = selected and 0.86 or 1,
+			BackgroundTransparency = selected and 0.88 or 1,
 			LayoutOrder = index,
 			Parent = card,
 		})
-		Utility.Corner(row, 9)
+		Utility.Corner(row, 10)
+		local rowStroke = Utility.Stroke(row, selected and tokens.Accent or tokens.Stroke, selected and 0.4 or tokens.StrokeAlpha, 1)
 		row.MouseEnter:Connect(function()
 			if not selected then
 				Tween(row, { BackgroundTransparency = 0.93 }, 0.15)
+				Tween(rowStroke, { Transparency = 0.75 }, 0.15)
 			end
 		end)
 		row.MouseLeave:Connect(function()
 			if not selected then
 				Tween(row, { BackgroundTransparency = 1 }, 0.2)
+				Tween(rowStroke, { Transparency = tokens.StrokeAlpha }, 0.2)
 			end
 		end)
 
+		-- a tiny window in that theme's colors
 		local swatch = Create("Frame", {
+			Name = "Swatch",
 			AnchorPoint = Vector2.new(0, 0.5),
-			Position = UDim2.new(0, 10, 0.5, 0),
-			Size = UDim2.fromOffset(38, 12),
-			BackgroundColor3 = WHITE,
+			Position = UDim2.new(0, 8, 0.5, 0),
+			Size = UDim2.fromOffset(58, 34),
+			BackgroundColor3 = preview.Background,
 			Parent = row,
 		})
-		Utility.Corner(swatch, Utility.Pill)
-		Create("UIGradient", { Color = Theme.Preview(name).GradientSeq, Parent = swatch })
+		Utility.Corner(swatch, 8)
+		Utility.Stroke(swatch, WHITE, 0.78, 1)
+		local banner = Create("Frame", {
+			Position = UDim2.fromOffset(6, 6),
+			Size = UDim2.new(1, -12, 0, 8),
+			BackgroundColor3 = WHITE,
+			Parent = swatch,
+		})
+		Utility.Corner(banner, Utility.Pill)
+		Create("UIGradient", { Color = preview.GradientSeq, Parent = banner })
+		local line = Create("Frame", {
+			Position = UDim2.fromOffset(6, 21),
+			Size = UDim2.new(0.55, 0, 0, 4),
+			BackgroundColor3 = preview.Text,
+			BackgroundTransparency = 0.7,
+			Parent = swatch,
+		})
+		Utility.Corner(line, Utility.Pill)
+		local dot = Create("Frame", {
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.new(1, -6, 0, 19),
+			Size = UDim2.fromOffset(8, 8),
+			BackgroundColor3 = preview.Accent,
+			Parent = swatch,
+		})
+		Utility.Corner(dot, Utility.Pill)
 
 		local label = Create("TextLabel", {
-			Position = UDim2.fromOffset(58, 0),
-			Size = UDim2.new(1, -86, 1, 0),
+			Position = UDim2.fromOffset(76, preview.Desc and 8 or 0),
+			Size = UDim2.new(1, -108, 0, preview.Desc and 18 or 50),
 			Text = name,
-			Font = selected and Enum.Font.GothamBold or Utility.Fonts.Label,
+			Font = Utility.Fonts.Title,
 			TextSize = 14,
+			TextTruncate = Enum.TextTruncate.AtEnd,
 			Parent = row,
 		})
 		theme:Bind(label, { TextColor3 = "Text" })
+		if preview.Desc then
+			local caption2 = Create("TextLabel", {
+				Position = UDim2.fromOffset(76, 26),
+				Size = UDim2.new(1, -108, 0, 16),
+				Text = preview.Desc,
+				Font = Utility.Fonts.Desc,
+				TextSize = 12,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				Parent = row,
+			})
+			theme:Bind(caption2, { TextColor3 = "SubText" })
+		end
 
 		if selected then
 			local check = Icons.Check(row, 14, 2)
 			check.AnchorPoint = Vector2.new(0.5, 0.5)
-			check.Position = UDim2.new(1, -18, 0.5, 0)
+			check.Position = UDim2.new(1, -20, 0.5, 0)
 			Icons.Bind(theme, check, "Text")
 		end
 

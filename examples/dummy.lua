@@ -17,8 +17,9 @@ end
 
 local MugiwaraUI = loadLibrary()
 
--- Paste an image here (asset id, "rbxassetid://..." or an http(s) URL) to test the wallpaper
--- and the image cards. Leave empty to skip. URLs need request + writefile + getcustomasset.
+-- Every theme brings its own wallpaper. Paste an image here (asset id, "rbxassetid://..." or an http(s) URL)
+-- to replace it with yours and to test the image cards. Leave empty to keep the theme wallpaper.
+-- URLs need request + writefile + getcustomasset.
 local DEMO_IMAGE = ""
 
 local Window = MugiwaraUI:CreateWindow({
@@ -29,7 +30,7 @@ local Window = MugiwaraUI:CreateWindow({
 	Folder = "MugiwaraDummy",
 	Size = UDim2.fromOffset(660, 440),
 	ToggleKey = Enum.KeyCode.RightShift,
-	Background = DEMO_IMAGE ~= "" and { Image = DEMO_IMAGE, Transparency = 0.55 } or nil,
+	Background = DEMO_IMAGE ~= "" and { Image = DEMO_IMAGE, Transparency = 0.3 } or nil, -- nil = the theme's wallpaper, false = none
 })
 
 local function say(title, content, kind)
@@ -161,6 +162,23 @@ track(Elements:Dropdown({
 	Multi = true,
 	Callback = function(values)
 		act("skills " .. table.concat(values, "+"))
+	end,
+}))
+
+track(Elements:Dropdown({
+	Title = "Weapon (icons + descriptions)",
+	Desc = "Each item can be a plain string, or { Title, Desc, Icon, IconColor }.",
+	Flag = "weapon",
+	Values = {
+		"Plain text item",
+		{ Title = "Sword", Icon = "lucide:sword", IconColor = Color3.fromRGB(255, 170, 40) },
+		{ Title = "Shield", Desc = "Blocks the next hit", Icon = "lucide:shield", IconColor = "Success" },
+		{ Title = "Bomb", Desc = "Area damage, long cooldown", Icon = "lucide:bomb", IconColor = Color3.fromRGB(255, 80, 90) },
+		{ Title = "Only a description", Desc = "No icon on this one" },
+	},
+	Value = "Sword",
+	Callback = function(value)
+		act("weapon " .. tostring(value))
 	end,
 }))
 
@@ -305,6 +323,27 @@ for _, sample in ipairs({
 	})
 end
 
+local colors = IconsTab:Section({ Title = "Icon colors", Opened = true })
+colors:Paragraph({
+	Title = "IconColor",
+	Desc = "Every element's icon follows the theme accent unless you pass IconColor: a Color3 (fixed) or a theme token name such as \"Success\" (follows the theme).",
+	Icon = "lucide:palette",
+})
+colors:Toggle({ Title = "Default (theme accent)", Icon = "lucide:star" })
+colors:Toggle({ Title = "Fixed Color3", Icon = "lucide:star", IconColor = Color3.fromRGB(255, 90, 90) })
+colors:Toggle({ Title = "Theme token: Success", Icon = "lucide:star", IconColor = "Success" })
+local recolor = colors:Button({
+	Title = "Recolor this icon",
+	Desc = "element:SetIconColor(color) - click to cycle.",
+	Icon = "lucide:paintbrush",
+})
+local palette = { Color3.fromRGB(255, 90, 90), Color3.fromRGB(90, 200, 255), Color3.fromRGB(120, 255, 140), "Warning", nil }
+local paletteIndex = 0
+recolor.Top.MouseButton1Click:Connect(function()
+	paletteIndex = paletteIndex % 5 + 1
+	recolor:SetIconColor(palette[paletteIndex])
+end)
+
 local tryIt = IconsTab:Section({ Title = "Try any icon", Opened = true })
 local previewSet, previewName = "lucide", "heart"
 local preview = tryIt:Paragraph({ Title = "Preview", Desc = "lucide:heart", Icon = "lucide:heart" })
@@ -402,7 +441,7 @@ More:Image({
 
 --// 3. Notifications & dialogs -------------------------------------------------
 local Feedback = Window:TabSection({ Title = "Feedback" })
-local Notifs = Feedback:Tab({ Title = "Notifications", Icon = "lucide:bell" })
+local Notifs = Feedback:Tab({ Title = "Notifications", Icon = "lucide:bell", IconColor = Color3.fromRGB(255, 200, 60) }) -- IconColor: fixed tab icon color
 
 Notifs:Button({ Title = "Info", Callback = function() say("Info", "Something neutral happened.", "info") end })
 Notifs:Button({ Title = "Success", Callback = function() say("Success", "Everything worked.", "success") end })
@@ -480,17 +519,25 @@ Settings:Button({
 
 Settings:Input({
 	Title = "Wallpaper",
-	Desc = "Asset id or URL. Empty removes it.",
+	Desc = "Asset id or URL. Replaces the theme's wallpaper; empty removes it.",
 	Placeholder = "rbxassetid://...",
 	Callback = function(text)
 		Window:SetBackground(text)
 	end,
 })
 
+Settings:Button({
+	Title = "Use the theme wallpaper",
+	Desc = "window:UseThemeBackground() - each theme ships its own picture.",
+	Callback = function()
+		Window:UseThemeBackground()
+	end,
+})
+
 Settings:Slider({
 	Title = "Wallpaper strength",
 	Desc = "Applies the next time a wallpaper is set.",
-	Value = { Min = 0, Max = 100, Default = 45 },
+	Value = { Min = 0, Max = 100, Default = 70 },
 	Suffix = "%",
 	Callback = function(value)
 		Window.BackgroundImage.ImageTransparency = 1 - value / 100

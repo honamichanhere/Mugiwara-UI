@@ -57,6 +57,7 @@ English comments, no Luau-only syntax (`continue`, `+=`, type annotations): the 
   `Transparency` yourself (Popup, Dialog, Shell).
 - `AbsoluteContentSize` is unreliable under `UIScale`: drawers sum their fixed child heights instead.
 - A `TextButton` child **swallows clicks** meant for its parent row. Use a `TextLabel` when the parent must be clicked.
+- Asset ids are never turned into text with `..` on a number (long ids lose digits): use `Utility.IdText`.
 - `Window` ScreenGuis use `IgnoreGuiInset = false` (input positions match `AbsolutePosition`). The Key / Loading
   shells use `true` so their backdrop covers the top bar strip.
 - Container method names collide with element constructors: a section's collapse method is `ToggleOpen`, not `Toggle`.
@@ -94,6 +95,9 @@ Kill switch: `npm run chat:off|readonly|on` in `server/worker`. The public URL i
   per-network limits, retention, Roblox-verified names, reserved names, optional filter (off by default), privacy banner.
 - Themes are exactly Gear 5 (default), Gear 4, Gear 3, Normal.
 - An accepted key is always saved (`SaveKey = false` opts out); there is no "remember" switch.
+- Each theme ships its own default wallpaper (ids chosen by the owner, in `src/core/Theme.lua`), transparency 0.3. Icon
+  colors default to the theme accent and are overridable with `IconColor`; the built-in controls are lucide icons with
+  drawn fallbacks.
 - Sections nest at most 2 levels. WindUI parity is not a goal beyond common hubs.
 
 ## Status

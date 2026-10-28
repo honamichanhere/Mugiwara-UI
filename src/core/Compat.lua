@@ -4,6 +4,8 @@
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 
+local Utility = Import("core/Utility")
+
 local Compat = {}
 
 local function try(fn, ...)
@@ -128,7 +130,8 @@ local resolvedAssets = {}
 -- Roblox Store images are almost always Decal assets, and an ImageLabel cannot show a Decal id
 -- (it renders nothing). A Decal wraps the real image, so the image id is read from the Decal.
 -- Returns the usable image string, or nil plus the reason it cannot be used.
-local function imageFromAssetId(id)
+local function imageFromAssetId(id, idText)
+	idText = idText or Utility.IdText(id)
 	if resolvedAssets[id] then
 		return resolvedAssets[id]
 	end
@@ -145,7 +148,7 @@ local function imageFromAssetId(id)
 	if assetType == ASSET_DECAL then
 		-- only Decals are ever loaded as objects, and the result is destroyed right away
 		local loaded, objects = pcall(function()
-			return game:GetObjects("rbxassetid://" .. id)
+			return game:GetObjects("rbxassetid://" .. idText)
 		end)
 		local root = loaded and objects and objects[1]
 		if root then
@@ -160,7 +163,7 @@ local function imageFromAssetId(id)
 			reason = "Asset " .. id .. " is a Decal and this executor cannot convert it (needs game:GetObjects). Use its Image id instead."
 		end
 	elseif assetType == nil or assetType == ASSET_IMAGE then
-		image = "rbxassetid://" .. id
+		image = "rbxassetid://" .. idText
 	else
 		reason = "Asset " .. id .. " is not an image (asset type " .. tostring(assetType) .. ")."
 	end
@@ -184,9 +187,11 @@ function Compat.ResolveImage(source, folder)
 		return nil
 	end
 
-	local id = tonumber(source) or tonumber(string.match(tostring(source), "^rbxassetid://(%d+)$"))
-	if id then
-		return imageFromAssetId(id)
+	local idText = type(source) == "number" and Utility.IdText(source)
+		or string.match(tostring(source), "^%d+$")
+		or string.match(tostring(source), "^rbxassetid://(%d+)$")
+	if idText then
+		return imageFromAssetId(tonumber(idText), idText)
 	end
 	if type(source) ~= "string" then
 		return nil, "Unsupported image value"

@@ -136,7 +136,7 @@ local function describe(data, name, depth)
 	if entry then
 		local sheet = data.Spritesheets and data.Spritesheets[tostring(entry.Image)] or entry.Image
 		if type(sheet) == "number" then
-			sheet = "rbxassetid://" .. sheet
+			sheet = "rbxassetid://" .. Utility.IdText(sheet)
 		end
 		local descriptor = {
 			Image = sheet,

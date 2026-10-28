@@ -301,10 +301,18 @@ function Methods.GetDescendants(self)
 	walk(self)
 	return out
 end
-function Methods.FindFirstChild(self, name)
+function Methods.FindFirstChild(self, name, recursive)
 	for _, child in ipairs(rawget(self, "_children")) do
 		if child.Name == name then
 			return child
+		end
+	end
+	if recursive then
+		for _, child in ipairs(rawget(self, "_children")) do
+			local found = Methods.FindFirstChild(child, name, true)
+			if found then
+				return found
+			end
 		end
 	end
 end
@@ -468,7 +476,7 @@ loadstring = function(source)
 end
 -- fake Footagesus/Icons: a flat set (lucide) and spritesheet sets (craft, geist with Parts)
 ICON_SOURCES = {
-	lucide = 'return { ["house"] = "rbxassetid://111", ["settings"] = "rbxassetid://222" }',
+	lucide = 'return { ["house"] = "rbxassetid://111", ["settings"] = "rbxassetid://222", ["sword"] = "rbxassetid://333", ["chevron-down"] = "rbxassetid://901", ["check"] = "rbxassetid://902", ["x"] = "rbxassetid://903", ["minus"] = "rbxassetid://904", ["square"] = "rbxassetid://905", ["copy"] = "rbxassetid://906" }',
 	craft = 'return { Spritesheets = { ["1"] = "rbxassetid://5" }, Icons = { ["folder-stroke"] = { Image = 1, ImageRectPosition = Vector2.new(96, 0), ImageRectSize = Vector2.new(96, 96) } } }',
 	geist = 'return { Spritesheets = { ["1"] = "rbxassetid://7" }, Icons = { bell = { Image = 1, ImageRectPosition = Vector2.new(0, 0), ImageRectSize = Vector2.new(128, 128), Parts = { [1] = "bell2" } }, bell2 = { Image = 1, ImageRectPosition = Vector2.new(128, 0), ImageRectSize = Vector2.new(128, 128) } } }',
 }

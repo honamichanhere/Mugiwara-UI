@@ -1,4 +1,4 @@
--- Mugiwara UI v0.7.0
+-- Mugiwara UI v0.8.0
 -- Glass + neon Gear 5 UI library for Roblox script hubs.
 -- https://github.com/honamichanhere/Mugiwara-UI  |  MIT License
 
@@ -56,6 +56,11 @@ function Element:SetIcon(icon)
 	return self._applyIcon(icon)
 end
 
+-- color: a Color3, a theme token name ("Accent", "Success", "Danger"...) or nil for the theme accent
+function Element:SetIconColor(color)
+	return self._applyIcon(self._icon, color or false)
+end
+
 function Element:SetVisible(visible)
 	self.Frame.Visible = visible
 end
@@ -87,6 +92,17 @@ function Base.Gradient(theme, parent, rotation, kind)
 	local gradient = Create("UIGradient", { Rotation = rotation or 0, Parent = parent })
 	theme:Bind(gradient, { Color = kind or "GradientSeq" })
 	return gradient
+end
+
+-- Colors an icon image: a Color3 stays fixed, a token name ("Success") follows the theme, nil = theme accent.
+function Base.PaintIcon(theme, label, color)
+	if typeof(color) == "Color3" then
+		Icons.Tint(label, color)
+	elseif type(color) == "string" and theme.Tokens[color] ~= nil then
+		Icons.BindImage(theme, label, color)
+	else
+		Icons.BindImage(theme, label, "Accent")
+	end
 end
 
 -- Dark inset field used by inputs, dropdown buttons and so on.
@@ -226,7 +242,12 @@ function Base.Card(container, opts, rightWidth, rightHeight)
 
 	-- optional icon before the title (opts.Icon); the text column shrinks by the icon's width
 	local iconHolder, iconLabel
-	local function applyIcon(icon)
+	local iconColor = opts.IconColor
+	local function applyIcon(icon, color)
+		if color ~= nil then
+			iconColor = color or nil -- SetIconColor(nil) passes false: back to the theme accent
+		end
+		el._icon = icon
 		if iconLabel then
 			iconLabel:Destroy()
 			iconLabel = nil
@@ -243,7 +264,7 @@ function Base.Card(container, opts, rightWidth, rightHeight)
 			end
 			iconLabel = Icons.Create(icon, iconHolder)
 			if iconLabel then
-				Icons.BindImage(theme, iconLabel, "Accent")
+				Base.PaintIcon(theme, iconLabel, iconColor)
 			end
 		end
 		if iconHolder then
@@ -3017,9 +3038,21 @@ return function(window, opts, parent)
 		BackgroundTransparency = 1,
 		Parent = button,
 	})
+	-- IconColor / IconColorActive: a Color3 or a theme token name; default is SubText idle, Text when selected
+	local customColor, customActive = opts.IconColor, opts.IconColorActive
+	local function iconTint(selected, tokens)
+		local custom = selected and (customActive or customColor) or customColor
+		if typeof(custom) == "Color3" then
+			return custom
+		elseif type(custom) == "string" and tokens[custom] ~= nil then
+			return tokens[custom]
+		end
+		return selected and tokens.Text or tokens.SubText
+	end
+
 	local iconImage, iconLetter = Icons.Create(opts.Icon, iconBox), nil
 	if iconImage then
-		Icons.Tint(iconImage, theme.Tokens.SubText)
+		Icons.Tint(iconImage, iconTint(false, theme.Tokens))
 		self.IconLabel = iconImage
 	else
 		iconLetter = Create("TextLabel", {
@@ -3028,7 +3061,7 @@ return function(window, opts, parent)
 			Font = Enum.Font.GothamBlack,
 			TextSize = 14,
 			TextXAlignment = Enum.TextXAlignment.Center,
-			TextColor3 = theme.Tokens.SubText,
+			TextColor3 = iconTint(false, theme.Tokens),
 			Parent = iconBox,
 		})
 	end
@@ -3053,14 +3086,15 @@ return function(window, opts, parent)
 		token = token + 1
 		local mine = token
 		local tint = state and theme.Tokens.Text or theme.Tokens.SubText
+		local iconColor = iconTint(state, theme.Tokens)
 
 		Tween(background, { BackgroundTransparency = state and 0.8 or 1 }, 0.25)
 		Tween(indicator, { Size = UDim2.fromOffset(3, state and 18 or 0) }, 0.3, Enum.EasingStyle.Back)
 		Tween(label, { TextColor3 = tint }, 0.2)
 		if iconImage then
-			Icons.Tint(iconImage, tint, 0.2)
+			Icons.Tint(iconImage, iconColor, 0.2)
 		else
-			Tween(iconLetter, { TextColor3 = tint }, 0.2)
+			Tween(iconLetter, { TextColor3 = iconColor }, 0.2)
 		end
 
 		if state then
@@ -3081,10 +3115,11 @@ return function(window, opts, parent)
 	local stopListening = theme:OnChange(function(tokens)
 		local tint = self.Selected and tokens.Text or tokens.SubText
 		label.TextColor3 = tint
+		local iconColor = iconTint(self.Selected, tokens)
 		if iconImage then
-			Icons.Tint(iconImage, tint)
+			Icons.Tint(iconImage, iconColor)
 		else
-			iconLetter.TextColor3 = tint
+			iconLetter.TextColor3 = iconColor
 		end
 	end)
 
@@ -3109,6 +3144,17 @@ return function(window, opts, parent)
 	function self:SetTitle(text)
 		self.Title = text
 		label.Text = text
+	end
+
+	-- color / active: Color3 or theme token name; nil goes back to the theme colors. `active` defaults to `color`.
+	function self:SetIconColor(color, active)
+		customColor, customActive = color, active
+		local tint = iconTint(self.Selected, theme.Tokens)
+		if iconImage then
+			Icons.Tint(iconImage, tint, 0.2)
+		else
+			Tween(iconLetter, { TextColor3 = tint }, 0.2)
+		end
 	end
 
 	function self:Destroy()
@@ -3835,11 +3881,21 @@ function Window.new(library, opts)
 
 	self.ConfirmClose = opts.ConfirmClose ~= false
 	self:SetVersion(opts.Version)
+	-- Background: nil = the theme's own wallpaper, false = none, an asset id / URL / { Image, Transparency, Dim } = yours
 	if type(opts.Background) == "table" then
 		self:SetBackground(opts.Background.Image, opts.Background.Transparency, opts.Background.Dim)
+	elseif opts.Background == false then
+		self:SetBackground(nil)
 	elseif opts.Background then
 		self:SetBackground(opts.Background)
+	else
+		self:UseThemeBackground()
 	end
+	maid:Give(theme:OnChange(function()
+		if self._wallpaperMode == "theme" and not self.Destroyed then
+			self:_applyThemeWallpaper()
+		end
+	end))
 	self:_fit()
 	self:SetBlur(opts.Blur == true)
 	library.Windows[self] = true
@@ -4044,32 +4100,66 @@ end
 --// Background image ------------------------------------------------------------------
 -- image: asset id, "rbxassetid://...", or an http(s) URL (needs request + writefile + getcustomasset).
 -- transparency: 0-1, higher = fainter (default 0.55). dim: 0-1 dark scrim over the image (default 0.45).
--- Pass nil / "" to remove it.
+-- Pass nil / "" to remove it. A wallpaper set here replaces the theme's own one (UseThemeBackground brings it back).
 function Window:SetBackground(image, transparency, dim)
+	self._wallpaperMode = (image == nil or image == "") and "none" or "custom"
+	self:_showWallpaper(image, transparency or 0.55, dim or 0.45, false)
+end
+
+-- Every theme carries its own wallpaper (Theme tokens Wallpaper / WallpaperAlpha / WallpaperDim).
+-- This is the default; it follows the theme when it changes.
+function Window:UseThemeBackground()
+	self._wallpaperMode = "theme"
+	self:_applyThemeWallpaper()
+end
+
+function Window:_applyThemeWallpaper()
+	local tokens = self.Theme.Tokens
+	self:_showWallpaper(tokens.Wallpaper, tokens.WallpaperAlpha or 0.3, tokens.WallpaperDim or 0.4, true)
+end
+
+-- quiet: failures are not reported (the theme wallpaper is a nicety, not something the user asked for)
+function Window:_showWallpaper(image, transparency, dim, quiet)
 	local label, scrim = self.BackgroundImage, self.BackgroundScrim
+	self._wallpaperToken = (self._wallpaperToken or 0) + 1
+	local mine = self._wallpaperToken
+
 	if image == nil or image == "" then
+		self._wallpaperImage = nil
 		label.Visible = false
 		scrim.Visible = false
 		return
 	end
-	local target = transparency or 0.55
-	local shade = dim or 0.45
+
+	-- same picture as before (switching between themes that share it): only the strengths change
+	if image == self._wallpaperImage and label.Visible then
+		Tween(label, { ImageTransparency = transparency }, 0.4)
+		Tween(scrim, { BackgroundTransparency = 1 - dim }, 0.4)
+		return
+	end
+
 	task.spawn(function()
 		local asset, reason = Compat.ResolveImage(image, self.Folder)
-		if not label.Parent then
-			return
+		if not label.Parent or mine ~= self._wallpaperToken then
+			return -- the window is gone, or a newer wallpaper was requested while this one resolved
 		end
 		if not asset then
-			self:Notify({ Title = "Wallpaper", Content = reason or "Could not load the image.", Type = "warning", Duration = 6 })
+			if not quiet then
+				self:Notify({ Title = "Wallpaper", Content = reason or "Could not load the image.", Type = "warning", Duration = 6 })
+			end
 			return
+		end
+		self._wallpaperImage = image
+		if label.Image ~= asset then
+			label.ImageTransparency = 1 -- fade the new picture in instead of popping it
 		end
 		label.Image = asset
 		label.Visible = true
 		scrim.Visible = true
-		Tween(label, { ImageTransparency = target }, 0.6)
-		Tween(scrim, { BackgroundTransparency = 1 - shade }, 0.6)
+		Tween(label, { ImageTransparency = transparency }, 0.6)
+		Tween(scrim, { BackgroundTransparency = 1 - dim }, 0.6)
 
-		if Compat.ImageLoaded(label) == false then
+		if not quiet and Compat.ImageLoaded(label) == false then
 			self:Notify({
 				Title = "Wallpaper",
 				Content = "Roblox could not load this image. It may be private, moderated, or not an Image asset.",
@@ -4100,13 +4190,13 @@ function Window:OpenThemeMenu()
 	local library = self.Library
 	local theme = self.Theme
 	local popup = Popup(self, {
-		Width = 210,
+		Width = 268,
 		Dim = false,
 		AnchorPoint = Vector2.new(1, 0),
 		Position = UDim2.new(1, -14, 0, TOPBAR - 2),
 	})
 	local card = popup.Card
-	card:FindFirstChildOfClass("UIListLayout").Padding = UDim.new(0, 4)
+	card:FindFirstChildOfClass("UIListLayout").Padding = UDim.new(0, 6)
 
 	local caption = Create("TextLabel", {
 		Size = UDim2.new(1, 0, 0, 18),
@@ -4118,51 +4208,96 @@ function Window:OpenThemeMenu()
 	})
 	theme:Bind(caption, { TextColor3 = "Muted" })
 
+	local tokens = theme.Tokens
 	for index, name in ipairs(library:GetThemes()) do
 		local selected = name == library:GetTheme()
+		local preview = Theme.Preview(name)
 		local row = Create("TextButton", {
-			Size = UDim2.new(1, 0, 0, 34),
+			Name = name,
+			Size = UDim2.new(1, 0, 0, 50),
 			BackgroundColor3 = WHITE,
-			BackgroundTransparency = selected and 0.86 or 1,
+			BackgroundTransparency = selected and 0.88 or 1,
 			LayoutOrder = index,
 			Parent = card,
 		})
-		Utility.Corner(row, 9)
+		Utility.Corner(row, 10)
+		local rowStroke = Utility.Stroke(row, selected and tokens.Accent or tokens.Stroke, selected and 0.4 or tokens.StrokeAlpha, 1)
 		row.MouseEnter:Connect(function()
 			if not selected then
 				Tween(row, { BackgroundTransparency = 0.93 }, 0.15)
+				Tween(rowStroke, { Transparency = 0.75 }, 0.15)
 			end
 		end)
 		row.MouseLeave:Connect(function()
 			if not selected then
 				Tween(row, { BackgroundTransparency = 1 }, 0.2)
+				Tween(rowStroke, { Transparency = tokens.StrokeAlpha }, 0.2)
 			end
 		end)
 
+		-- a tiny window in that theme's colors
 		local swatch = Create("Frame", {
+			Name = "Swatch",
 			AnchorPoint = Vector2.new(0, 0.5),
-			Position = UDim2.new(0, 10, 0.5, 0),
-			Size = UDim2.fromOffset(38, 12),
-			BackgroundColor3 = WHITE,
+			Position = UDim2.new(0, 8, 0.5, 0),
+			Size = UDim2.fromOffset(58, 34),
+			BackgroundColor3 = preview.Background,
 			Parent = row,
 		})
-		Utility.Corner(swatch, Utility.Pill)
-		Create("UIGradient", { Color = Theme.Preview(name).GradientSeq, Parent = swatch })
+		Utility.Corner(swatch, 8)
+		Utility.Stroke(swatch, WHITE, 0.78, 1)
+		local banner = Create("Frame", {
+			Position = UDim2.fromOffset(6, 6),
+			Size = UDim2.new(1, -12, 0, 8),
+			BackgroundColor3 = WHITE,
+			Parent = swatch,
+		})
+		Utility.Corner(banner, Utility.Pill)
+		Create("UIGradient", { Color = preview.GradientSeq, Parent = banner })
+		local line = Create("Frame", {
+			Position = UDim2.fromOffset(6, 21),
+			Size = UDim2.new(0.55, 0, 0, 4),
+			BackgroundColor3 = preview.Text,
+			BackgroundTransparency = 0.7,
+			Parent = swatch,
+		})
+		Utility.Corner(line, Utility.Pill)
+		local dot = Create("Frame", {
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.new(1, -6, 0, 19),
+			Size = UDim2.fromOffset(8, 8),
+			BackgroundColor3 = preview.Accent,
+			Parent = swatch,
+		})
+		Utility.Corner(dot, Utility.Pill)
 
 		local label = Create("TextLabel", {
-			Position = UDim2.fromOffset(58, 0),
-			Size = UDim2.new(1, -86, 1, 0),
+			Position = UDim2.fromOffset(76, preview.Desc and 8 or 0),
+			Size = UDim2.new(1, -108, 0, preview.Desc and 18 or 50),
 			Text = name,
-			Font = selected and Enum.Font.GothamBold or Utility.Fonts.Label,
+			Font = Utility.Fonts.Title,
 			TextSize = 14,
+			TextTruncate = Enum.TextTruncate.AtEnd,
 			Parent = row,
 		})
 		theme:Bind(label, { TextColor3 = "Text" })
+		if preview.Desc then
+			local caption2 = Create("TextLabel", {
+				Position = UDim2.fromOffset(76, 26),
+				Size = UDim2.new(1, -108, 0, 16),
+				Text = preview.Desc,
+				Font = Utility.Fonts.Desc,
+				TextSize = 12,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				Parent = row,
+			})
+			theme:Bind(caption2, { TextColor3 = "SubText" })
+		end
 
 		if selected then
 			local check = Icons.Check(row, 14, 2)
 			check.AnchorPoint = Vector2.new(0.5, 0.5)
-			check.Position = UDim2.new(1, -18, 0.5, 0)
+			check.Position = UDim2.new(1, -20, 0.5, 0)
 			Icons.Bind(theme, check, "Text")
 		end
 
@@ -6235,11 +6370,33 @@ local Base = Import("components/Base")
 
 local Create, Tween = Utility.Create, Utility.Tween
 
-local ROW_HEIGHT = 30
-local LIST_MAX = 170
+local ROW_HEIGHT = 32
+local DESC_ROW_HEIGHT = 48
+local ROW_GAP = 4
+local LIST_MAX = 200
+local LIST_INSET = 2
+local WHITE = Color3.new(1, 1, 1)
 
--- opts: Title, Desc, Values = { "a", "b" }, Value (string | table when Multi), Multi,
---       AllowNone, Searchable, Placeholder, Callback, Flag
+-- Values entries are plain strings or tables { Title, Desc, Icon, IconColor }; Title is the value that
+-- Get() / Callback return. Returns the names in order plus a name -> { Desc, Icon, IconColor } lookup.
+local function normalize(list)
+	local names, meta = {}, {}
+	for _, item in ipairs(list or {}) do
+		if type(item) == "table" then
+			local name = item.Title or item.Name or item.Value
+			if name ~= nil then
+				table.insert(names, name)
+				meta[name] = { Desc = item.Desc, Icon = item.Icon, IconColor = item.IconColor }
+			end
+		else
+			table.insert(names, item)
+		end
+	end
+	return names, meta
+end
+
+-- opts: Title, Desc, Values = { "a", { Title = "b", Desc = "...", Icon = "lucide:sword", IconColor = Color3 } },
+--       Value (string | table when Multi), Multi, AllowNone, Searchable, Placeholder, Callback, Flag
 return function(container, opts)
 	opts = opts or {}
 	local theme = container.Window.Theme
@@ -6248,7 +6405,7 @@ return function(container, opts)
 	local el = Base.Card(container, opts, 156, 28)
 	local drawer = Base.Expandable(el)
 
-	local values = table.clone(opts.Values or {})
+	local values, meta = normalize(opts.Values)
 	local selected = {}
 	local rows = {}
 	local query = ""
@@ -6269,6 +6426,9 @@ return function(container, opts)
 	chevron.AnchorPoint = Vector2.new(0.5, 0.5)
 	chevron.Position = UDim2.new(1, -14, 0.5, 0)
 	Icons.Bind(theme, chevron, "SubText")
+
+	-- icon of the chosen item (single select), shown before the text in the closed button
+	local fieldIcon
 
 	--// drawer content
 	local searchField, searchBox
@@ -6298,7 +6458,9 @@ return function(container, opts)
 		LayoutOrder = 2,
 		Parent = drawer.Frame,
 	})
-	Utility.List(list, 2)
+	Utility.List(list, ROW_GAP)
+	-- row borders are drawn outside the row: this inset keeps the scroll frame from clipping them
+	Utility.Padding(list, LIST_INSET, LIST_INSET, LIST_INSET, LIST_INSET)
 
 	--// helpers
 	local function isSelected(name)
@@ -6317,13 +6479,37 @@ return function(container, opts)
 
 	local function renderLabel()
 		local names = selectedNames()
+		if fieldIcon then
+			fieldIcon:Destroy()
+			fieldIcon = nil
+		end
 		if #names == 0 then
 			label.Text = opts.Placeholder or "Select..."
 			label.TextTransparency = 0.45
 		else
 			label.Text = table.concat(names, ", ")
 			label.TextTransparency = 0
+			local info = not multi and #names == 1 and meta[names[1]] or nil
+			if info and info.Icon then
+				local slot = Create("Frame", {
+					AnchorPoint = Vector2.new(0, 0.5),
+					Position = UDim2.new(0, 9, 0.5, 0),
+					Size = UDim2.fromOffset(16, 16),
+					BackgroundTransparency = 1,
+					Parent = field,
+				})
+				local image = Icons.Create(info.Icon, slot)
+				if image then
+					Base.PaintIcon(theme, image, info.IconColor)
+					fieldIcon = slot
+				else
+					slot:Destroy()
+				end
+			end
 		end
+		local left = fieldIcon and 32 or 10
+		label.Position = UDim2.fromOffset(left, 0)
+		label.Size = UDim2.new(1, -(left + 24), 1, 0)
 	end
 
 	local function currentValue()
@@ -6337,10 +6523,13 @@ return function(container, opts)
 		Utility.SafeCall(opts.Callback, currentValue())
 	end
 
-	local function paintRow(row, name, hovered)
-		local on = isSelected(name)
-		row.Frame.BackgroundTransparency = on and 0.78 or (hovered and 0.93 or 1)
+	local function paintRow(row, hovered)
+		local on = isSelected(row.Name)
+		local tokens = theme.Tokens
+		row.Frame.BackgroundTransparency = on and 0.78 or (hovered and 0.92 or 1)
 		row.Check.Visible = on
+		row.Stroke.Color = on and tokens.Accent or tokens.Stroke
+		row.Stroke.Transparency = on and 0.45 or (hovered and 0.78 or tokens.StrokeAlpha)
 	end
 
 	local function clearRows()
@@ -6354,53 +6543,90 @@ return function(container, opts)
 
 	local function rebuild()
 		clearRows()
-		local shown = 0
+		local shown, total = 0, 0
 		for _, name in ipairs(values) do
-			if query == "" or string.find(string.lower(name), query, 1, true) then
+			local info = meta[name]
+			local haystack = string.lower(tostring(name) .. " " .. tostring(info and info.Desc or ""))
+			if query == "" or string.find(haystack, query, 1, true) then
 				shown = shown + 1
+				local height = (info and info.Desc) and DESC_ROW_HEIGHT or ROW_HEIGHT
+				total = total + height
 				local button = Create("TextButton", {
-					Name = name,
-					Size = UDim2.new(1, 0, 0, ROW_HEIGHT),
-					BackgroundColor3 = Color3.new(1, 1, 1),
+					Name = tostring(name),
+					Size = UDim2.new(1, 0, 0, height),
+					BackgroundColor3 = WHITE,
 					BackgroundTransparency = 1,
 					LayoutOrder = shown,
 					Parent = list,
 				})
-				Utility.Corner(button, 7)
+				Utility.Corner(button, 8)
 				Base.Gradient(theme, button, 0)
+				local stroke = Utility.Stroke(button, WHITE, 0.9, 1)
+
+				-- icon column
+				local left = 12
+				if info and info.Icon then
+					local slot = Create("Frame", {
+						AnchorPoint = Vector2.new(0, 0.5),
+						Position = UDim2.new(0, 10, 0.5, 0),
+						Size = UDim2.fromOffset(20, 20),
+						BackgroundTransparency = 1,
+						Parent = button,
+					})
+					local image = Icons.Create(info.Icon, slot)
+					if image then
+						Base.PaintIcon(theme, image, info.IconColor)
+						left = 40
+					else
+						slot:Destroy()
+					end
+				end
 
 				local text = Create("TextLabel", {
-					Position = UDim2.fromOffset(10, 0),
-					Size = UDim2.new(1, -36, 1, 0),
-					Text = name,
-					Font = Utility.Fonts.Body,
+					Position = UDim2.fromOffset(left, info and info.Desc and 7 or 0),
+					Size = UDim2.new(1, -(left + 34), 0, info and info.Desc and 18 or height),
+					Text = tostring(name),
+					Font = Utility.Fonts.Label,
 					TextSize = 13,
 					TextTruncate = Enum.TextTruncate.AtEnd,
 					Parent = button,
 				})
 				theme:Bind(text, { TextColor3 = "Text" })
 
+				if info and info.Desc then
+					local desc = Create("TextLabel", {
+						Position = UDim2.fromOffset(left, 25),
+						Size = UDim2.new(1, -(left + 34), 0, 16),
+						Text = tostring(info.Desc),
+						Font = Utility.Fonts.Desc,
+						TextSize = 12,
+						TextTruncate = Enum.TextTruncate.AtEnd,
+						Parent = button,
+					})
+					theme:Bind(desc, { TextColor3 = "SubText" })
+				end
+
 				local check = Icons.Check(button, 14, 2)
 				check.AnchorPoint = Vector2.new(0.5, 0.5)
-				check.Position = UDim2.new(1, -16, 0.5, 0)
+				check.Position = UDim2.new(1, -18, 0.5, 0)
 				Icons.Bind(theme, check, "Text")
 
-				local row = { Frame = button, Check = check }
+				local row = { Frame = button, Check = check, Stroke = stroke, Name = name }
 				table.insert(rows, row)
-				paintRow(row, name, false)
+				paintRow(row, false)
 
 				button.MouseEnter:Connect(function()
-					paintRow(row, name, true)
+					paintRow(row, true)
 				end)
 				button.MouseLeave:Connect(function()
-					paintRow(row, name, false)
+					paintRow(row, false)
 				end)
 				button.MouseButton1Click:Connect(function()
 					choose(name)
 				end)
 			end
 		end
-		local height = math.min(shown * (ROW_HEIGHT + 2), LIST_MAX)
+		local height = math.min(total + math.max(shown - 1, 0) * ROW_GAP + LIST_INSET * 2, LIST_MAX)
 		list.Size = UDim2.new(1, 0, 0, height)
 		list.Visible = shown > 0
 	end
@@ -6441,7 +6667,7 @@ return function(container, opts)
 			for _, name in ipairs(type(value) == "table" and value or {}) do
 				selected[name] = true
 			end
-		elseif type(value) == "string" then
+		elseif value ~= nil and not (type(value) == "table") then
 			selected[value] = true
 		end
 	end
@@ -6462,7 +6688,7 @@ return function(container, opts)
 	end
 
 	function el:Refresh(newValues, keepSelection)
-		values = table.clone(newValues or {})
+		values, meta = normalize(newValues)
 		if keepSelection then
 			for name in pairs(selected) do
 				if not table.find(values, name) then
@@ -6494,6 +6720,13 @@ return function(container, opts)
 		el:Set(value)
 	end
 
+	-- row borders and the selection color are painted by hand, so they follow the theme through this listener
+	el.Maid:Give(theme:OnChange(function()
+		for _, row in ipairs(rows) do
+			paintRow(row, false)
+		end
+	end))
+
 	if searchBox then
 		el.Maid:Give(searchBox:GetPropertyChangedSignal("Text"):Connect(function()
 			query = string.lower(searchBox.Text)
@@ -6506,6 +6739,11 @@ return function(container, opts)
 			setOpen(not drawer.Open)
 		end
 	end))
+
+	-- test access
+	el.Rows = function()
+		return rows
+	end
 
 	return Base.Finish(container, el, opts, "Dropdown")
 end
@@ -7231,6 +7469,8 @@ __modules["core/Compat"] = function(Import)
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 
+local Utility = Import("core/Utility")
+
 local Compat = {}
 
 local function try(fn, ...)
@@ -7355,7 +7595,8 @@ local resolvedAssets = {}
 -- Roblox Store images are almost always Decal assets, and an ImageLabel cannot show a Decal id
 -- (it renders nothing). A Decal wraps the real image, so the image id is read from the Decal.
 -- Returns the usable image string, or nil plus the reason it cannot be used.
-local function imageFromAssetId(id)
+local function imageFromAssetId(id, idText)
+	idText = idText or Utility.IdText(id)
 	if resolvedAssets[id] then
 		return resolvedAssets[id]
 	end
@@ -7372,7 +7613,7 @@ local function imageFromAssetId(id)
 	if assetType == ASSET_DECAL then
 		-- only Decals are ever loaded as objects, and the result is destroyed right away
 		local loaded, objects = pcall(function()
-			return game:GetObjects("rbxassetid://" .. id)
+			return game:GetObjects("rbxassetid://" .. idText)
 		end)
 		local root = loaded and objects and objects[1]
 		if root then
@@ -7387,7 +7628,7 @@ local function imageFromAssetId(id)
 			reason = "Asset " .. id .. " is a Decal and this executor cannot convert it (needs game:GetObjects). Use its Image id instead."
 		end
 	elseif assetType == nil or assetType == ASSET_IMAGE then
-		image = "rbxassetid://" .. id
+		image = "rbxassetid://" .. idText
 	else
 		reason = "Asset " .. id .. " is not an image (asset type " .. tostring(assetType) .. ")."
 	end
@@ -7411,9 +7652,11 @@ function Compat.ResolveImage(source, folder)
 		return nil
 	end
 
-	local id = tonumber(source) or tonumber(string.match(tostring(source), "^rbxassetid://(%d+)$"))
-	if id then
-		return imageFromAssetId(id)
+	local idText = type(source) == "number" and Utility.IdText(source)
+		or string.match(tostring(source), "^%d+$")
+		or string.match(tostring(source), "^rbxassetid://(%d+)$")
+	if idText then
+		return imageFromAssetId(tonumber(idText), idText)
 	end
 	if type(source) ~= "string" then
 		return nil, "Unsupported image value"
@@ -7789,7 +8032,7 @@ local function describe(data, name, depth)
 	if entry then
 		local sheet = data.Spritesheets and data.Spritesheets[tostring(entry.Image)] or entry.Image
 		if type(sheet) == "number" then
-			sheet = "rbxassetid://" .. sheet
+			sheet = "rbxassetid://" .. Utility.IdText(sheet)
 		end
 		local descriptor = {
 			Image = sheet,
@@ -7864,13 +8107,13 @@ Icons.Registry = {}
 
 local function normalize(icon)
 	if type(icon) == "number" then
-		return "rbxassetid://" .. icon
+		return "rbxassetid://" .. Utility.IdText(icon)
 	end
 	if type(icon) == "string" then
 		if string.find(icon, "^rbxasset") then
 			return icon
 		end
-		if tonumber(icon) then
+		if string.find(icon, "^%d+$") then
 			return "rbxassetid://" .. icon
 		end
 	end
@@ -7924,12 +8167,127 @@ local function holder(parent, name, size)
 	})
 end
 
+--// Glyphs --------------------------------------------------------------------------
+-- The small controls (chevron, check, close, minimize, maximize, restore) are lucide icons.
+-- Each one is first drawn from frames, so it works offline and before the icon set has
+-- downloaded, then swapped for the icon as soon as it is available.
+-- Icons.Glyphs[name] = "lucide:x" | any icon-set name | asset id; false / nil keeps the drawn version.
+Icons.Glyphs = {
+	Chevron = "lucide:chevron-down",
+	Check = "lucide:check",
+	Close = "lucide:x",
+	Minus = "lucide:minus",
+	Square = "lucide:square",
+	Restore = "lucide:copy",
+}
+
+-- Icons.SetGlyphs({ Check = "lucide:circle-check", Close = "lucide:circle-x" }); false keeps the drawn glyph.
+-- Affects the UI created after the call.
+function Icons.SetGlyphs(map)
+	for name, icon in pairs(map or {}) do
+		if Icons.Glyphs[name] ~= nil then
+			Icons.Glyphs[name] = icon
+		end
+	end
+end
+
+-- these icons sit inside a 24px canvas with padding: scaled up so they match the drawn glyphs' visual size
+local GLYPH_SCALE = { Chevron = 1.35, Check = 1.15, Close = 1.4, Minus = 1.3, Square = 1.2, Restore = 1.2 }
+
+-- holder -> { Theme, Token } for glyphs bound to a theme color; weak so destroyed glyphs vanish
+local boundGlyphs = setmetatable({}, { __mode = "k" })
+
+local function describeGlyph(icon)
+	local direct = Icons.Resolve(icon)
+	if direct then
+		return { Image = direct }
+	end
+	return IconSets.Get(icon)
+end
+
+-- Glyph parts are drawn frames (bars / outlines) or the icon image; recolor whichever applies.
+local function eachPart(glyph, applyFrame, applyImage)
+	for _, child in ipairs(glyph:GetChildren()) do
+		if child:IsA("Frame") then
+			applyFrame(child, child:FindFirstChildOfClass("UIStroke"))
+		elseif child:IsA("ImageLabel") and applyImage then
+			applyImage(child)
+		end
+	end
+end
+
+local function readColor(glyph)
+	local found
+	eachPart(glyph, function(part, stroke)
+		found = found or (stroke and stroke.Color or part.BackgroundColor3)
+	end, function(image)
+		found = found or image.ImageColor3
+	end)
+	return found or Color3.new(1, 1, 1)
+end
+
+local function swapForIcon(root, kind, size, descriptor)
+	local color = readColor(root)
+	for _, child in ipairs(root:GetChildren()) do
+		if child:IsA("Frame") or child:IsA("ImageLabel") then
+			child:Destroy()
+		end
+	end
+	local span = size * (GLYPH_SCALE[kind] or 1.2)
+	local image = Create("ImageLabel", {
+		Name = "Image",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(span, span),
+		ImageColor3 = color,
+		Parent = root,
+	})
+	IconSets.Apply(image, descriptor)
+	local bound = boundGlyphs[root]
+	if bound then
+		Icons.BindImage(bound.Theme, image, bound.Token)
+	end
+end
+
+-- Upgrades run one at a time on a single thread: the first one may download the icon set, and the
+-- glyphs created in the meantime wait for it instead of each starting their own download.
+local queue, draining = {}, false
+
+local function drain()
+	if draining then
+		return
+	end
+	draining = true
+	task.spawn(function()
+		while #queue > 0 do
+			local job = table.remove(queue, 1)
+			pcall(job)
+		end
+		draining = false
+	end)
+end
+
+local function upgrade(root, kind, size)
+	table.insert(queue, function()
+		local icon = Icons.Glyphs and Icons.Glyphs[kind]
+		if not icon or not root.Parent then
+			return
+		end
+		local descriptor = describeGlyph(icon)
+		if descriptor and root.Parent then
+			swapForIcon(root, kind, size, descriptor)
+		end
+	end)
+	drain()
+end
+
 -- Points down. Rotate the returned holder for other directions.
 function Icons.Chevron(parent, size, thickness)
 	local root = holder(parent, "Chevron", size)
 	local length = size * 0.56
 	bar(root, length, thickness or 2, 45, 0.31, 0.5)
 	bar(root, length, thickness or 2, -45, 0.69, 0.5)
+	upgrade(root, "Chevron", size)
 	return root
 end
 
@@ -7937,6 +8295,7 @@ function Icons.Check(parent, size, thickness)
 	local root = holder(parent, "Check", size)
 	bar(root, size * 0.34, thickness or 2, 42, 0.3, 0.63)
 	bar(root, size * 0.64, thickness or 2, -48, 0.63, 0.51)
+	upgrade(root, "Check", size)
 	return root
 end
 
@@ -7944,12 +8303,14 @@ function Icons.Close(parent, size, thickness)
 	local root = holder(parent, "Close", size)
 	bar(root, size * 0.78, thickness or 2, 45, 0.5, 0.5)
 	bar(root, size * 0.78, thickness or 2, -45, 0.5, 0.5)
+	upgrade(root, "Close", size)
 	return root
 end
 
 function Icons.Minus(parent, size, thickness)
 	local root = holder(parent, "Minus", size)
 	bar(root, size * 0.7, thickness or 2, 0, 0.5, 0.5)
+	upgrade(root, "Minus", size)
 	return root
 end
 
@@ -7965,6 +8326,7 @@ function Icons.Square(parent, size, thickness)
 	})
 	Utility.Corner(box, 3)
 	Utility.Stroke(box, Color3.new(1, 1, 1), 0, thickness or 2)
+	upgrade(root, "Square", size)
 	return root
 end
 
@@ -7983,27 +8345,21 @@ function Icons.Restore(parent, size, thickness)
 	Utility.Stroke(front, Color3.new(1, 1, 1), 0, th)
 	bar(root, size * 0.4, th, 0, 0.66, 0.16)
 	bar(root, size * 0.38, th, 90, 0.86, 0.34)
+	upgrade(root, "Restore", size)
 	return root
 end
 
--- Glyph parts are either filled bars or stroked outlines; recolor whichever applies.
-local function eachPart(glyph, apply)
-	for _, child in ipairs(glyph:GetChildren()) do
-		if child:IsA("Frame") then
-			local stroke = child:FindFirstChildOfClass("UIStroke")
-			apply(child, stroke)
-		end
-	end
-end
-
--- Binds every part of a drawn glyph to a theme color token.
+-- Binds every part of a glyph to a theme color token (an icon that arrives later is bound too).
 function Icons.Bind(theme, glyph, token)
+	boundGlyphs[glyph] = { Theme = theme, Token = token }
 	eachPart(glyph, function(part, stroke)
 		if stroke then
 			theme:Bind(stroke, { Color = token })
 		else
 			theme:Bind(part, { BackgroundColor3 = token })
 		end
+	end, function(image)
+		Icons.BindImage(theme, image, token)
 	end)
 	return glyph
 end
@@ -8015,6 +8371,8 @@ function Icons.SetColor(glyph, color)
 		else
 			part.BackgroundColor3 = color
 		end
+	end, function(image)
+		Icons.Tint(image, color)
 	end)
 end
 
@@ -8138,6 +8496,11 @@ local BASE = {
 		rgb(255, 122, 26),
 		rgb(255, 52, 82),
 	},
+	-- Wallpaper: asset id / rbxassetid / URL drawn behind the window (nil = none); WallpaperAlpha: 0 solid .. 1 invisible.
+	-- Desc: one line shown under the name in the theme menu.
+	Wallpaper = nil,
+	WallpaperAlpha = 0.3,
+	Desc = nil,
 }
 
 local DEFAULT = "Gear 5"
@@ -8159,6 +8522,8 @@ Theme.Presets = {
 		Muted = rgb(142, 146, 164),
 		OnAccent = rgb(16, 18, 30),
 		Accent = rgb(255, 255, 255),
+		Wallpaper = "132136264088686",
+		Desc = "White and soft gold",
 		Gradient = {
 			rgb(255, 255, 255),
 			rgb(224, 234, 255),
@@ -8175,6 +8540,8 @@ Theme.Presets = {
 		Popup = rgb(10, 8, 10),
 		OnAccent = rgb(255, 255, 255),
 		Accent = rgb(240, 46, 58),
+		Wallpaper = "97664760089542",
+		Desc = "Black and red",
 		Gradient = {
 			rgb(255, 116, 116),
 			rgb(244, 56, 68),
@@ -8190,6 +8557,8 @@ Theme.Presets = {
 		Popup = rgb(22, 14, 6),
 		OnAccent = rgb(34, 14, 4),
 		Accent = rgb(255, 204, 52),
+		Wallpaper = "72569835503667",
+		Desc = "Yellow into red",
 		Gradient = {
 			rgb(255, 246, 160),
 			rgb(255, 208, 52),
@@ -8199,7 +8568,10 @@ Theme.Presets = {
 	},
 
 	-- Normal: orange, red, white, black and yellow (the BASE tokens).
-	["Normal"] = {},
+	["Normal"] = {
+		Wallpaper = "95252648321318",
+		Desc = "Orange, red and yellow",
+	},
 }
 
 local function resolve(name)
@@ -8511,6 +8883,14 @@ end
 
 Utility.Pill = UDim.new(1, 0)
 
+-- Asset ids as text. Converting a long number with tostring or .. may round or add ".0" (15+ digits are common now).
+function Utility.IdText(value)
+	if type(value) == "number" then
+		return string.format("%.0f", value)
+	end
+	return tostring(value)
+end
+
 --// Tweening
 function Utility.Tween(inst, goal, duration, style, direction)
 	local tween = TweenService:Create(
@@ -8775,7 +9155,7 @@ if env.MugiwaraUI and type(env.MugiwaraUI.Destroy) == "function" then
 end
 
 local Library = {
-	Version = "0.7.0",
+	Version = "0.8.0",
 	Windows = {},
 	Theme = Theme.new("Gear 5"),
 	Icons = Icons,
@@ -8822,6 +9202,12 @@ end
 -- Default icon set for names without a prefix ("house" vs "lucide:house"): lucide, craft, geist, gravity, solar
 function Library:SetIconSet(name)
 	return IconSets.SetDefault(name)
+end
+
+-- Icons of the built-in controls: Chevron, Check, Close, Minus, Square, Restore.
+-- UI:SetGlyphs({ Close = "lucide:circle-x" }); false keeps the drawn version. Call it before CreateWindow.
+function Library:SetGlyphs(map)
+	Icons.SetGlyphs(map)
 end
 
 -- Downloads icon sets ahead of time (in the background) so the first icons do not wait on the network.

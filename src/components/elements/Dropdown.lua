@@ -4,11 +4,33 @@ local Base = Import("components/Base")
 
 local Create, Tween = Utility.Create, Utility.Tween
 
-local ROW_HEIGHT = 30
-local LIST_MAX = 170
+local ROW_HEIGHT = 32
+local DESC_ROW_HEIGHT = 48
+local ROW_GAP = 4
+local LIST_MAX = 200
+local LIST_INSET = 2
+local WHITE = Color3.new(1, 1, 1)
 
--- opts: Title, Desc, Values = { "a", "b" }, Value (string | table when Multi), Multi,
---       AllowNone, Searchable, Placeholder, Callback, Flag
+-- Values entries are plain strings or tables { Title, Desc, Icon, IconColor }; Title is the value that
+-- Get() / Callback return. Returns the names in order plus a name -> { Desc, Icon, IconColor } lookup.
+local function normalize(list)
+	local names, meta = {}, {}
+	for _, item in ipairs(list or {}) do
+		if type(item) == "table" then
+			local name = item.Title or item.Name or item.Value
+			if name ~= nil then
+				table.insert(names, name)
+				meta[name] = { Desc = item.Desc, Icon = item.Icon, IconColor = item.IconColor }
+			end
+		else
+			table.insert(names, item)
+		end
+	end
+	return names, meta
+end
+
+-- opts: Title, Desc, Values = { "a", { Title = "b", Desc = "...", Icon = "lucide:sword", IconColor = Color3 } },
+--       Value (string | table when Multi), Multi, AllowNone, Searchable, Placeholder, Callback, Flag
 return function(container, opts)
 	opts = opts or {}
 	local theme = container.Window.Theme
@@ -17,7 +39,7 @@ return function(container, opts)
 	local el = Base.Card(container, opts, 156, 28)
 	local drawer = Base.Expandable(el)
 
-	local values = table.clone(opts.Values or {})
+	local values, meta = normalize(opts.Values)
 	local selected = {}
 	local rows = {}
 	local query = ""
@@ -38,6 +60,9 @@ return function(container, opts)
 	chevron.AnchorPoint = Vector2.new(0.5, 0.5)
 	chevron.Position = UDim2.new(1, -14, 0.5, 0)
 	Icons.Bind(theme, chevron, "SubText")
+
+	-- icon of the chosen item (single select), shown before the text in the closed button
+	local fieldIcon
 
 	--// drawer content
 	local searchField, searchBox
@@ -67,7 +92,9 @@ return function(container, opts)
 		LayoutOrder = 2,
 		Parent = drawer.Frame,
 	})
-	Utility.List(list, 2)
+	Utility.List(list, ROW_GAP)
+	-- row borders are drawn outside the row: this inset keeps the scroll frame from clipping them
+	Utility.Padding(list, LIST_INSET, LIST_INSET, LIST_INSET, LIST_INSET)
 
 	--// helpers
 	local function isSelected(name)
@@ -86,13 +113,37 @@ return function(container, opts)
 
 	local function renderLabel()
 		local names = selectedNames()
+		if fieldIcon then
+			fieldIcon:Destroy()
+			fieldIcon = nil
+		end
 		if #names == 0 then
 			label.Text = opts.Placeholder or "Select..."
 			label.TextTransparency = 0.45
 		else
 			label.Text = table.concat(names, ", ")
 			label.TextTransparency = 0
+			local info = not multi and #names == 1 and meta[names[1]] or nil
+			if info and info.Icon then
+				local slot = Create("Frame", {
+					AnchorPoint = Vector2.new(0, 0.5),
+					Position = UDim2.new(0, 9, 0.5, 0),
+					Size = UDim2.fromOffset(16, 16),
+					BackgroundTransparency = 1,
+					Parent = field,
+				})
+				local image = Icons.Create(info.Icon, slot)
+				if image then
+					Base.PaintIcon(theme, image, info.IconColor)
+					fieldIcon = slot
+				else
+					slot:Destroy()
+				end
+			end
 		end
+		local left = fieldIcon and 32 or 10
+		label.Position = UDim2.fromOffset(left, 0)
+		label.Size = UDim2.new(1, -(left + 24), 1, 0)
 	end
 
 	local function currentValue()
@@ -106,10 +157,13 @@ return function(container, opts)
 		Utility.SafeCall(opts.Callback, currentValue())
 	end
 
-	local function paintRow(row, name, hovered)
-		local on = isSelected(name)
-		row.Frame.BackgroundTransparency = on and 0.78 or (hovered and 0.93 or 1)
+	local function paintRow(row, hovered)
+		local on = isSelected(row.Name)
+		local tokens = theme.Tokens
+		row.Frame.BackgroundTransparency = on and 0.78 or (hovered and 0.92 or 1)
 		row.Check.Visible = on
+		row.Stroke.Color = on and tokens.Accent or tokens.Stroke
+		row.Stroke.Transparency = on and 0.45 or (hovered and 0.78 or tokens.StrokeAlpha)
 	end
 
 	local function clearRows()
@@ -123,53 +177,90 @@ return function(container, opts)
 
 	local function rebuild()
 		clearRows()
-		local shown = 0
+		local shown, total = 0, 0
 		for _, name in ipairs(values) do
-			if query == "" or string.find(string.lower(name), query, 1, true) then
+			local info = meta[name]
+			local haystack = string.lower(tostring(name) .. " " .. tostring(info and info.Desc or ""))
+			if query == "" or string.find(haystack, query, 1, true) then
 				shown = shown + 1
+				local height = (info and info.Desc) and DESC_ROW_HEIGHT or ROW_HEIGHT
+				total = total + height
 				local button = Create("TextButton", {
-					Name = name,
-					Size = UDim2.new(1, 0, 0, ROW_HEIGHT),
-					BackgroundColor3 = Color3.new(1, 1, 1),
+					Name = tostring(name),
+					Size = UDim2.new(1, 0, 0, height),
+					BackgroundColor3 = WHITE,
 					BackgroundTransparency = 1,
 					LayoutOrder = shown,
 					Parent = list,
 				})
-				Utility.Corner(button, 7)
+				Utility.Corner(button, 8)
 				Base.Gradient(theme, button, 0)
+				local stroke = Utility.Stroke(button, WHITE, 0.9, 1)
+
+				-- icon column
+				local left = 12
+				if info and info.Icon then
+					local slot = Create("Frame", {
+						AnchorPoint = Vector2.new(0, 0.5),
+						Position = UDim2.new(0, 10, 0.5, 0),
+						Size = UDim2.fromOffset(20, 20),
+						BackgroundTransparency = 1,
+						Parent = button,
+					})
+					local image = Icons.Create(info.Icon, slot)
+					if image then
+						Base.PaintIcon(theme, image, info.IconColor)
+						left = 40
+					else
+						slot:Destroy()
+					end
+				end
 
 				local text = Create("TextLabel", {
-					Position = UDim2.fromOffset(10, 0),
-					Size = UDim2.new(1, -36, 1, 0),
-					Text = name,
-					Font = Utility.Fonts.Body,
+					Position = UDim2.fromOffset(left, info and info.Desc and 7 or 0),
+					Size = UDim2.new(1, -(left + 34), 0, info and info.Desc and 18 or height),
+					Text = tostring(name),
+					Font = Utility.Fonts.Label,
 					TextSize = 13,
 					TextTruncate = Enum.TextTruncate.AtEnd,
 					Parent = button,
 				})
 				theme:Bind(text, { TextColor3 = "Text" })
 
+				if info and info.Desc then
+					local desc = Create("TextLabel", {
+						Position = UDim2.fromOffset(left, 25),
+						Size = UDim2.new(1, -(left + 34), 0, 16),
+						Text = tostring(info.Desc),
+						Font = Utility.Fonts.Desc,
+						TextSize = 12,
+						TextTruncate = Enum.TextTruncate.AtEnd,
+						Parent = button,
+					})
+					theme:Bind(desc, { TextColor3 = "SubText" })
+				end
+
 				local check = Icons.Check(button, 14, 2)
 				check.AnchorPoint = Vector2.new(0.5, 0.5)
-				check.Position = UDim2.new(1, -16, 0.5, 0)
+				check.Position = UDim2.new(1, -18, 0.5, 0)
 				Icons.Bind(theme, check, "Text")
 
-				local row = { Frame = button, Check = check }
+				local row = { Frame = button, Check = check, Stroke = stroke, Name = name }
 				table.insert(rows, row)
-				paintRow(row, name, false)
+				paintRow(row, false)
 
 				button.MouseEnter:Connect(function()
-					paintRow(row, name, true)
+					paintRow(row, true)
 				end)
 				button.MouseLeave:Connect(function()
-					paintRow(row, name, false)
+					paintRow(row, false)
 				end)
 				button.MouseButton1Click:Connect(function()
 					choose(name)
 				end)
 			end
 		end
-		local height = math.min(shown * (ROW_HEIGHT + 2), LIST_MAX)
+		local height = math.min(total + math.max(shown - 1, 0) * ROW_GAP + LIST_INSET * 2, LIST_MAX)
 		list.Size = UDim2.new(1, 0, 0, height)
 		list.Visible = shown > 0
 	end
@@ -210,7 +301,7 @@ return function(container, opts)
 			for _, name in ipairs(type(value) == "table" and value or {}) do
 				selected[name] = true
 			end
-		elseif type(value) == "string" then
+		elseif value ~= nil and not (type(value) == "table") then
 			selected[value] = true
 		end
 	end
@@ -231,7 +322,7 @@ return function(container, opts)
 	end
 
 	function el:Refresh(newValues, keepSelection)
-		values = table.clone(newValues or {})
+		values, meta = normalize(newValues)
 		if keepSelection then
 			for name in pairs(selected) do
 				if not table.find(values, name) then
@@ -263,6 +354,13 @@ return function(container, opts)
 		el:Set(value)
 	end
 
+	-- row borders and the selection color are painted by hand, so they follow the theme through this listener
+	el.Maid:Give(theme:OnChange(function()
+		for _, row in ipairs(rows) do
+			paintRow(row, false)
+		end
+	end))
+
 	if searchBox then
 		el.Maid:Give(searchBox:GetPropertyChangedSignal("Text"):Connect(function()
 			query = string.lower(searchBox.Text)
@@ -275,6 +373,11 @@ return function(container, opts)
 			setOpen(not drawer.Open)
 		end
 	end))
+
+	-- test access
+	el.Rows = function()
+		return rows
+	end
 
 	return Base.Finish(container, el, opts, "Dropdown")
 end
