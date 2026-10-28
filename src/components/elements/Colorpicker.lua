@@ -17,8 +17,12 @@ local RAINBOW = ColorSequence.new({
 })
 
 local MODES = { "HEX", "RGB", "HSV", "HSL" }
-local SQUARE = 176 -- saturation / value square
-local BAR = 18
+local SQUARE = 168 -- saturation / value square
+local BAR = 14 -- hue / opacity slider thickness (handles are wider than the bar on purpose)
+local HANDLE = 22
+local INNER = 230 -- content width of the popup (card width minus padding)
+local GAP = 8 -- space between fields / tabs
+local PAD = 16
 
 --// HSL helpers (HSV comes from Color3) ----------------------------------------
 local function toHSL(color)
@@ -69,17 +73,27 @@ local function round(value)
 	return math.floor(value + 0.5)
 end
 
+-- Ring handle: white ring with the picked color inside, so it reads on any background.
 local function marker(parent, size)
 	local dot = Create("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Size = UDim2.fromOffset(size, size),
-		BackgroundTransparency = 1,
+		BackgroundColor3 = WHITE,
 		ZIndex = 5,
 		Parent = parent,
 	})
 	Utility.Corner(dot, Utility.Pill)
-	Utility.Stroke(dot, WHITE, 0, 2)
-	return dot
+	Utility.Stroke(dot, Color3.new(0, 0, 0), 0.55, 1)
+	local fill = Create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(1, -6, 1, -6),
+		BackgroundColor3 = WHITE,
+		ZIndex = 6,
+		Parent = dot,
+	})
+	Utility.Corner(fill, Utility.Pill)
+	return dot, fill
 end
 
 -- opts: Title, Desc, Default (Color3), Transparency (0 = opaque), Callback(color, transparency), Flag
@@ -147,9 +161,12 @@ return function(container, opts)
 		if ui then
 			ui.Square.BackgroundColor3 = Color3.fromHSV(hue, 1, 1)
 			ui.SquareMarker.Position = UDim2.fromScale(sat, 1 - val)
+			ui.SquareFill.BackgroundColor3 = color
 			ui.HueMarker.Position = UDim2.fromScale(0.5, hue)
+			ui.HueFill.BackgroundColor3 = Color3.fromHSV(hue, 1, 1)
 			ui.AlphaBar.BackgroundColor3 = color
 			ui.AlphaMarker.Position = UDim2.fromScale(0.5, 1 - alpha)
+			ui.AlphaFill.BackgroundColor3 = color
 			ui.Preview.BackgroundColor3 = color
 			ui.Preview.BackgroundTransparency = 1 - alpha
 			renderFields()
@@ -259,16 +276,16 @@ return function(container, opts)
 		ui.Boxes = {}
 
 		local count = mode == "HEX" and 1 or 3
-		local alphaWidth = 58
-		local fieldWidth = math.floor((236 - alphaWidth - 6 * count) / count)
+		local alphaWidth = 60
+		local fieldWidth = math.floor((INNER - alphaWidth - GAP * count) / count)
 
 		for index = 1, count do
-			local field = Base.Field(theme, row, UDim2.fromOffset(fieldWidth, 28))
+			local field = Base.Field(theme, row, UDim2.fromOffset(fieldWidth, 32))
 			field.LayoutOrder = index
 			local box = Create("TextBox", {
 				Size = UDim2.fromScale(1, 1),
 				Font = Enum.Font.GothamBold,
-				TextSize = 12,
+				TextSize = 13,
 				TextXAlignment = Enum.TextXAlignment.Center,
 				ClearTextOnFocus = false,
 				Parent = field,
@@ -280,12 +297,12 @@ return function(container, opts)
 			ui.Boxes[index] = box
 		end
 
-		local alphaField = Base.Field(theme, row, UDim2.fromOffset(alphaWidth, 28))
+		local alphaField = Base.Field(theme, row, UDim2.fromOffset(alphaWidth, 32))
 		alphaField.LayoutOrder = 10
 		local alphaBox = Create("TextBox", {
 			Size = UDim2.fromScale(1, 1),
 			Font = Enum.Font.GothamBold,
-			TextSize = 12,
+			TextSize = 13,
 			TextXAlignment = Enum.TextXAlignment.Center,
 			ClearTextOnFocus = false,
 			Parent = alphaField,
@@ -307,7 +324,9 @@ return function(container, opts)
 	local function open()
 		local popMaid = Utility.Maid.new()
 		local popup = Popup(window, {
-			Width = 264,
+			Width = INNER + PAD * 2,
+			Padding = PAD,
+			Gap = 12,
 			OnClose = function()
 				popMaid:Clean()
 				ui = nil
@@ -320,12 +339,12 @@ return function(container, opts)
 		el.Popup = popup
 
 		--// header
-		local header = Create("Frame", { Size = UDim2.new(1, 0, 0, 22), BackgroundTransparency = 1, LayoutOrder = 1, Parent = card })
+		local header = Create("Frame", { Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1, LayoutOrder = 1, Parent = card })
 		local title = Create("TextLabel", {
-			Size = UDim2.new(1, -60, 1, 0),
+			Size = UDim2.new(1, -90, 1, 0),
 			Text = opts.Title or "Color",
 			Font = Enum.Font.GothamBold,
-			TextSize = 14,
+			TextSize = 16,
 			TextTruncate = Enum.TextTruncate.AtEnd,
 			Parent = header,
 		})
@@ -333,22 +352,33 @@ return function(container, opts)
 
 		ui.Preview = Create("Frame", {
 			AnchorPoint = Vector2.new(1, 0.5),
-			Position = UDim2.new(1, -30, 0.5, 0),
-			Size = UDim2.fromOffset(32, 16),
+			Position = UDim2.new(1, -38, 0.5, 0),
+			Size = UDim2.fromOffset(36, 20),
 			BackgroundColor3 = current(),
 			Parent = header,
 		})
-		Utility.Corner(ui.Preview, 5)
+		Utility.Corner(ui.Preview, 6)
 		Utility.Stroke(ui.Preview, WHITE, 0.6, 1)
 
 		local closeButton = Create("TextButton", {
 			AnchorPoint = Vector2.new(1, 0.5),
 			Position = UDim2.fromScale(1, 0.5),
-			Size = UDim2.fromOffset(22, 22),
+			Size = UDim2.fromOffset(32, 32),
+			BackgroundColor3 = WHITE,
+			BackgroundTransparency = 1,
 			Parent = header,
 		})
-		local closeGlyph = Icons.Close(closeButton, 12, 2)
+		Utility.Corner(closeButton, 9)
+		local closeGlyph = Icons.Close(closeButton, 18, 2)
 		Icons.Bind(theme, closeGlyph, "SubText")
+		closeButton.MouseEnter:Connect(function()
+			Tween(closeButton, { BackgroundTransparency = 0.88 }, 0.15)
+			Icons.SetColor(closeGlyph, theme.Tokens.Danger)
+		end)
+		closeButton.MouseLeave:Connect(function()
+			Tween(closeButton, { BackgroundTransparency = 1 }, 0.2)
+			Icons.SetColor(closeGlyph, theme.Tokens.SubText)
+		end)
 		popMaid:Give(closeButton.MouseButton1Click:Connect(function()
 			popup:Close()
 		end))
@@ -368,22 +398,22 @@ return function(container, opts)
 		local blackLayer = Create("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0), Parent = ui.Square })
 		Utility.Corner(blackLayer, 8)
 		Create("UIGradient", { Rotation = 90, Transparency = NumberSequence.new(1, 0), Parent = blackLayer })
-		ui.SquareMarker = marker(ui.Square, 14)
+		ui.SquareMarker, ui.SquareFill = marker(ui.Square, 20)
 		local squareHit = Create("TextButton", { Size = UDim2.fromScale(1, 1), ZIndex = 6, Parent = ui.Square })
 
 		local hueBar = Create("Frame", {
-			Position = UDim2.fromOffset(SQUARE + 10, 0),
+			Position = UDim2.fromOffset(SQUARE + 16, 0),
 			Size = UDim2.fromOffset(BAR, SQUARE),
 			BackgroundColor3 = WHITE,
 			Parent = area,
 		})
 		Utility.Corner(hueBar, Utility.Pill)
 		Create("UIGradient", { Rotation = 90, Color = RAINBOW, Parent = hueBar })
-		ui.HueMarker = marker(hueBar, 16)
+		ui.HueMarker, ui.HueFill = marker(hueBar, HANDLE)
 		local hueHit = Create("TextButton", { Size = UDim2.fromScale(1, 1), ZIndex = 6, Parent = hueBar })
 
 		ui.AlphaBar = Create("Frame", {
-			Position = UDim2.fromOffset(SQUARE + 10 + BAR + 8, 0),
+			Position = UDim2.fromOffset(SQUARE + 16 + BAR + 16, 0),
 			Size = UDim2.fromOffset(BAR, SQUARE),
 			BackgroundColor3 = current(),
 			Parent = area,
@@ -391,7 +421,7 @@ return function(container, opts)
 		Utility.Corner(ui.AlphaBar, Utility.Pill)
 		Create("UIGradient", { Rotation = 90, Transparency = NumberSequence.new(0, 0.95), Parent = ui.AlphaBar })
 		Utility.Stroke(ui.AlphaBar, WHITE, 0.85, 1)
-		ui.AlphaMarker = marker(ui.AlphaBar, 16)
+		ui.AlphaMarker, ui.AlphaFill = marker(ui.AlphaBar, HANDLE)
 		local alphaHit = Create("TextButton", { Size = UDim2.fromScale(1, 1), ZIndex = 6, Parent = ui.AlphaBar })
 
 		local function ratio(frame, position, axis)
@@ -416,8 +446,9 @@ return function(container, opts)
 		end)
 
 		--// mode tabs
-		local tabs = Create("Frame", { Size = UDim2.new(1, 0, 0, 26), BackgroundTransparency = 1, LayoutOrder = 3, Parent = card })
-		Utility.List(tabs, 4, Enum.FillDirection.Horizontal)
+		local tabs = Create("Frame", { Size = UDim2.new(1, 0, 0, 32), BackgroundTransparency = 1, LayoutOrder = 3, Parent = card })
+		Utility.List(tabs, GAP, Enum.FillDirection.Horizontal)
+		local tabWidth = math.floor((INNER - GAP * (#MODES - 1)) / #MODES)
 		local row
 		local tabButtons = {}
 
@@ -431,18 +462,18 @@ return function(container, opts)
 
 		for index, name in ipairs(MODES) do
 			local button = Create("TextButton", {
-				Size = UDim2.new(1 / #MODES, -3, 1, 0),
+				Size = UDim2.fromOffset(tabWidth, 32),
 				LayoutOrder = index,
 				Parent = tabs,
 			})
 			local background = Create("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = WHITE, BackgroundTransparency = 1, Parent = button })
-			Utility.Corner(background, 7)
+			Utility.Corner(background, 9)
 			Base.Gradient(theme, background, 0)
 			local label = Create("TextLabel", {
 				Size = UDim2.fromScale(1, 1),
 				Text = name,
 				Font = Enum.Font.GothamBold,
-				TextSize = 11,
+				TextSize = 12,
 				TextXAlignment = Enum.TextXAlignment.Center,
 				Parent = button,
 			})
@@ -459,8 +490,8 @@ return function(container, opts)
 		end
 
 		--// fields
-		row = Create("Frame", { Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1, LayoutOrder = 4, Parent = card })
-		Utility.List(row, 6, Enum.FillDirection.Horizontal)
+		row = Create("Frame", { Size = UDim2.new(1, 0, 0, 32), BackgroundTransparency = 1, LayoutOrder = 4, Parent = card })
+		Utility.List(row, GAP, Enum.FillDirection.Horizontal)
 
 		paintTabs()
 		buildFields(row, popMaid)

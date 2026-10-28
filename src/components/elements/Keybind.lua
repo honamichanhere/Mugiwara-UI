@@ -16,7 +16,7 @@ return function(container, opts)
 	local label = Create("TextLabel", {
 		Size = UDim2.fromScale(1, 1),
 		Font = Enum.Font.GothamBold,
-		TextSize = 12,
+		TextSize = 13,
 		TextXAlignment = Enum.TextXAlignment.Center,
 		Parent = field,
 	})

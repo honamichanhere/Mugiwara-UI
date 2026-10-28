@@ -6,7 +6,7 @@ local Base = Import("components/Base")
 
 local Create, Tween = Utility.Create, Utility.Tween
 
--- opts: Width, Dim (default true), AnchorPoint, Position, OnClose
+-- opts: Width, Padding (14), Gap (10), Dim (default true), AnchorPoint, Position, OnClose
 return function(window, opts)
 	opts = opts or {}
 	local theme = window.Theme
@@ -47,8 +47,8 @@ return function(window, opts)
 	-- so its transparency is tweened by hand together with the group.
 	local outline = Utility.Stroke(card, Color3.new(1, 1, 1), 1, 1.4)
 	Base.Gradient(theme, outline, 45)
-	Utility.Padding(card, 14, 14, 14, 14)
-	Utility.List(card, 10)
+	Utility.Padding(card, opts.Padding or 14)
+	Utility.List(card, opts.Gap or 10)
 
 	local pop = Create("UIScale", { Scale = 0.94, Parent = card })
 	Tween(pop, { Scale = 1 }, 0.35, Enum.EasingStyle.Quint)

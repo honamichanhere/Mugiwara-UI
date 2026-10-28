@@ -80,7 +80,7 @@ function Window.new(library, opts)
 
 	local maid = self.Maid
 	local size = toVector(opts.Size, Vector2.new(640, 430))
-	local minSize = toVector(opts.MinSize, Vector2.new(470, 320))
+	local minSize = toVector(opts.MinSize, Vector2.new(480, 340))
 	local maxSize = toVector(opts.MaxSize, Vector2.new(1000, 760))
 	local sidebarWidth = opts.SideBarWidth or (Compat.IsMobile and 150 or 176)
 
@@ -238,7 +238,7 @@ function Window.new(library, opts)
 	local titleRow = Create("Frame", {
 		Name = "TitleRow",
 		Position = UDim2.new(0, 56, 0, hasSubtitle and 8 or 0),
-		Size = UDim2.new(1, -230, 0, hasSubtitle and 22 or TOPBAR),
+		Size = UDim2.new(1, -240, 0, hasSubtitle and 22 or TOPBAR),
 		BackgroundTransparency = 1,
 		ClipsDescendants = true,
 		Parent = topbar,
@@ -274,7 +274,7 @@ function Window.new(library, opts)
 		Size = UDim2.fromOffset(0, 16),
 		AutomaticSize = Enum.AutomaticSize.X,
 		Font = Enum.Font.GothamBold,
-		TextSize = 10,
+		TextSize = 11,
 		TextXAlignment = Enum.TextXAlignment.Center,
 		Parent = versionPill,
 	})
@@ -285,10 +285,10 @@ function Window.new(library, opts)
 	if hasSubtitle then
 		local subtitle = Create("TextLabel", {
 			Position = UDim2.new(0, 56, 0, 30),
-			Size = UDim2.new(1, -230, 0, 14),
+			Size = UDim2.new(1, -240, 0, 14),
 			Text = opts.Subtitle or opts.Author,
-			Font = Enum.Font.Gotham,
-			TextSize = 11,
+			Font = Utility.Fonts.Desc,
+			TextSize = 12,
 			TextTruncate = Enum.TextTruncate.AtEnd,
 			Parent = topbar,
 		})
@@ -311,12 +311,12 @@ function Window.new(library, opts)
 		end)
 	end
 
-	-- 30x30 hit area; glyphs are centered inside it
+	-- 34x34 hit area; glyphs are centered inside it
 	local function controlButton(offset)
 		local button = Create("TextButton", {
 			AnchorPoint = Vector2.new(1, 0.5),
 			Position = UDim2.new(1, offset, 0.5, 0),
-			Size = UDim2.fromOffset(30, 30),
+			Size = UDim2.fromOffset(34, 34),
 			BackgroundColor3 = WHITE,
 			BackgroundTransparency = 1,
 			Parent = topbar,
@@ -325,41 +325,51 @@ function Window.new(library, opts)
 		return button
 	end
 
-	local closeButton = controlButton(-14)
-	local closeGlyph = Icons.Bind(theme, Icons.Close(closeButton, 14, 2), "SubText")
+	local closeButton = controlButton(-12)
+	local closeGlyph = Icons.Bind(theme, Icons.Close(closeButton, 20, 2), "SubText")
 	hoverFeedback(closeButton, { closeGlyph }, "Danger")
 
 	local maximizeButton = controlButton(-50)
-	local squareGlyph = Icons.Bind(theme, Icons.Square(maximizeButton, 14, 2), "SubText")
-	local restoreGlyph = Icons.Bind(theme, Icons.Restore(maximizeButton, 14, 2), "SubText")
+	local squareGlyph = Icons.Bind(theme, Icons.Square(maximizeButton, 20, 2), "SubText")
+	local restoreGlyph = Icons.Bind(theme, Icons.Restore(maximizeButton, 20, 2), "SubText")
 	restoreGlyph.Visible = false
 	hoverFeedback(maximizeButton, { squareGlyph, restoreGlyph }, nil)
 	self._squareGlyph, self._restoreGlyph = squareGlyph, restoreGlyph
 
-	local minimizeButton = controlButton(-86)
-	local minusGlyph = Icons.Bind(theme, Icons.Minus(minimizeButton, 14, 2), "SubText")
+	local minimizeButton = controlButton(-88)
+	local minusGlyph = Icons.Bind(theme, Icons.Minus(minimizeButton, 20, 2), "SubText")
 	hoverFeedback(minimizeButton, { minusGlyph }, nil)
 
 	local themeButton
 	if opts.ThemeSwitcher ~= false then
-		themeButton = controlButton(-122)
+		themeButton = controlButton(-126)
+		-- ring + inner dot, sized to match the other 20px glyphs
+		local ring = Create("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromOffset(22, 22),
+			BackgroundTransparency = 1,
+			Parent = themeButton,
+		})
+		Utility.Corner(ring, Utility.Pill)
+		local ringStroke = Utility.Stroke(ring, WHITE, 0.2, 2)
+		Base.Gradient(theme, ringStroke, 45)
 		local dot = Create("Frame", {
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			Position = UDim2.fromScale(0.5, 0.5),
-			Size = UDim2.fromOffset(16, 16),
+			Size = UDim2.fromOffset(10, 10),
 			BackgroundColor3 = WHITE,
-			Parent = themeButton,
+			Parent = ring,
 		})
 		Utility.Corner(dot, Utility.Pill)
 		Base.Gradient(theme, dot, 45)
-		Utility.Stroke(dot, WHITE, 0.55, 1.2)
 		themeButton.MouseEnter:Connect(function()
 			Tween(themeButton, { BackgroundTransparency = 0.88 }, 0.15)
-			Tween(dot, { Size = UDim2.fromOffset(18, 18) }, 0.2, Enum.EasingStyle.Back)
+			Tween(dot, { Size = UDim2.fromOffset(13, 13) }, 0.25, Enum.EasingStyle.Back)
 		end)
 		themeButton.MouseLeave:Connect(function()
 			Tween(themeButton, { BackgroundTransparency = 1 }, 0.2)
-			Tween(dot, { Size = UDim2.fromOffset(16, 16) }, 0.2)
+			Tween(dot, { Size = UDim2.fromOffset(10, 10) }, 0.2)
 		end)
 	end
 
@@ -449,8 +459,8 @@ function Window.new(library, opts)
 			Position = UDim2.fromOffset(52, 28),
 			Size = UDim2.new(1, -60, 0, 16),
 			Text = "@" .. (player and player.Name or "player"),
-			Font = Enum.Font.Gotham,
-			TextSize = 11,
+			Font = Utility.Fonts.Desc,
+			TextSize = 12,
 			TextTruncate = Enum.TextTruncate.AtEnd,
 			Parent = footer,
 		})
@@ -881,7 +891,7 @@ function Window:OpenThemeMenu()
 		Size = UDim2.new(1, 0, 0, 18),
 		Text = "THEME",
 		Font = Enum.Font.GothamBold,
-		TextSize = 10,
+		TextSize = 11,
 		LayoutOrder = 0,
 		Parent = card,
 	})
@@ -922,8 +932,8 @@ function Window:OpenThemeMenu()
 			Position = UDim2.fromOffset(58, 0),
 			Size = UDim2.new(1, -86, 1, 0),
 			Text = name,
-			Font = selected and Enum.Font.GothamBold or Enum.Font.GothamMedium,
-			TextSize = 13,
+			Font = selected and Enum.Font.GothamBold or Utility.Fonts.Label,
+			TextSize = 14,
 			Parent = row,
 		})
 		theme:Bind(label, { TextColor3 = "Text" })
@@ -996,7 +1006,7 @@ function Window:SidebarLabel(text)
 		Size = UDim2.new(1, 0, 0, 24),
 		Text = "  " .. string.upper(text),
 		Font = Enum.Font.GothamBold,
-		TextSize = 10,
+		TextSize = 11,
 		LayoutOrder = self:NextTabOrder(),
 		Parent = self.TabList,
 	})

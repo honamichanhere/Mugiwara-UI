@@ -35,7 +35,7 @@ return function(window, opts)
 		Size = UDim2.new(1, -34, 1, 0),
 		Text = string.upper(opts.Title or "Group"),
 		Font = Enum.Font.GothamBold,
-		TextSize = 10,
+		TextSize = 11,
 		TextTruncate = Enum.TextTruncate.AtEnd,
 		Parent = header,
 	})

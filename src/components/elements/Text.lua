@@ -51,7 +51,7 @@ function Text.Divider(container, opts)
 	local caption = opts.Title and string.upper(opts.Title) or nil
 	local gap = 0
 	if caption then
-		local bounds = TextService:GetTextSize(caption, 10, Enum.Font.GothamBold, Vector2.new(1000, 20))
+		local bounds = TextService:GetTextSize(caption, 11, Enum.Font.GothamBold, Vector2.new(1000, 20))
 		gap = bounds.X + 24
 	end
 
@@ -77,7 +77,7 @@ function Text.Divider(container, opts)
 			Size = UDim2.new(0, gap, 1, 0),
 			Text = caption,
 			Font = Enum.Font.GothamBold,
-			TextSize = 10,
+			TextSize = 11,
 			TextXAlignment = Enum.TextXAlignment.Center,
 			Parent = frame,
 		})

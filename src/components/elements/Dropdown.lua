@@ -27,8 +27,8 @@ return function(container, opts)
 	local label = Create("TextLabel", {
 		Position = UDim2.fromOffset(10, 0),
 		Size = UDim2.new(1, -34, 1, 0),
-		Font = Enum.Font.Gotham,
-		TextSize = 12,
+		Font = Utility.Fonts.Body,
+		TextSize = 13,
 		TextTruncate = Enum.TextTruncate.AtEnd,
 		Parent = field,
 	})
@@ -53,8 +53,8 @@ return function(container, opts)
 			Size = UDim2.new(1, -20, 1, 0),
 			PlaceholderText = "Search...",
 			Text = "",
-			Font = Enum.Font.Gotham,
-			TextSize = 12,
+			Font = Utility.Fonts.Body,
+			TextSize = 13,
 			ClearTextOnFocus = false,
 			Parent = searchField,
 		})
@@ -142,8 +142,8 @@ return function(container, opts)
 					Position = UDim2.fromOffset(10, 0),
 					Size = UDim2.new(1, -36, 1, 0),
 					Text = name,
-					Font = Enum.Font.Gotham,
-					TextSize = 12,
+					Font = Utility.Fonts.Body,
+					TextSize = 13,
 					TextTruncate = Enum.TextTruncate.AtEnd,
 					Parent = button,
 				})

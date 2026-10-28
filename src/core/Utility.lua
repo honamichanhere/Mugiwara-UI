@@ -39,6 +39,16 @@ end
 
 Utility.Maid = Maid
 
+--// Fonts: change the whole library's typography here.
+-- Plain "Gotham" renders too thin on the glass background, so body text starts at Medium.
+Utility.Fonts = {
+	Title = Enum.Font.GothamBold,
+	Heading = Enum.Font.GothamBold,
+	Label = Enum.Font.GothamSemibold,
+	Body = Enum.Font.GothamMedium,
+	Desc = Enum.Font.GothamMedium,
+}
+
 --// Instance creation
 local TEXT_CLASSES = { TextLabel = true, TextButton = true, TextBox = true }
 

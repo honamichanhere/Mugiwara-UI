@@ -23,7 +23,7 @@ return function(container, opts)
 		Size = UDim2.fromScale(1, 1),
 		Text = "",
 		Font = Enum.Font.GothamBold,
-		TextSize = 12,
+		TextSize = 13,
 		TextXAlignment = Enum.TextXAlignment.Center,
 		ClearTextOnFocus = false,
 		Parent = box,

@@ -1,4 +1,4 @@
--- Mugiwara UI v0.2.1
+-- Mugiwara UI v0.2.2
 -- Glass + neon Gear 5 UI library for Roblox script hubs.
 -- https://github.com/honamichanhere/Mugiwara-UI  |  MIT License
 
@@ -187,8 +187,8 @@ function Base.Card(container, opts, rightWidth, rightHeight)
 		Size = UDim2.new(1, 0, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		Text = opts.Title or "",
-		Font = Enum.Font.GothamMedium,
-		TextSize = 14,
+		Font = Utility.Fonts.Title,
+		TextSize = 15,
 		TextWrapped = true,
 		RichText = true,
 		Visible = opts.Title ~= nil and opts.Title ~= "",
@@ -202,8 +202,8 @@ function Base.Card(container, opts, rightWidth, rightHeight)
 		Size = UDim2.new(1, 0, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		Text = opts.Desc or "",
-		Font = Enum.Font.Gotham,
-		TextSize = 12,
+		Font = Utility.Fonts.Desc,
+		TextSize = 13,
 		TextWrapped = true,
 		RichText = true,
 		Visible = opts.Desc ~= nil and opts.Desc ~= "",
@@ -619,8 +619,8 @@ return function(window, opts)
 			Size = UDim2.new(1, 0, 0, 0),
 			AutomaticSize = Enum.AutomaticSize.Y,
 			Text = opts.Content,
-			Font = Enum.Font.Gotham,
-			TextSize = 13,
+			Font = Utility.Fonts.Desc,
+			TextSize = 14,
 			TextWrapped = true,
 			RichText = true,
 			ZIndex = 52,
@@ -803,8 +803,8 @@ function Notification.Notify(library, opts)
 		Size = UDim2.new(1, 0, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		Text = opts.Title or "Notification",
-		Font = Enum.Font.GothamBold,
-		TextSize = 14,
+		Font = Utility.Fonts.Title,
+		TextSize = 15,
 		TextWrapped = true,
 		LayoutOrder = 1,
 		Parent = body,
@@ -816,8 +816,8 @@ function Notification.Notify(library, opts)
 			Size = UDim2.new(1, 0, 0, 0),
 			AutomaticSize = Enum.AutomaticSize.Y,
 			Text = opts.Content,
-			Font = Enum.Font.Gotham,
-			TextSize = 12,
+			Font = Utility.Fonts.Desc,
+			TextSize = 13,
 			TextWrapped = true,
 			RichText = true,
 			LayoutOrder = 2,
@@ -908,7 +908,7 @@ local Base = Import("components/Base")
 
 local Create, Tween = Utility.Create, Utility.Tween
 
--- opts: Width, Dim (default true), AnchorPoint, Position, OnClose
+-- opts: Width, Padding (14), Gap (10), Dim (default true), AnchorPoint, Position, OnClose
 return function(window, opts)
 	opts = opts or {}
 	local theme = window.Theme
@@ -949,8 +949,8 @@ return function(window, opts)
 	-- so its transparency is tweened by hand together with the group.
 	local outline = Utility.Stroke(card, Color3.new(1, 1, 1), 1, 1.4)
 	Base.Gradient(theme, outline, 45)
-	Utility.Padding(card, 14, 14, 14, 14)
-	Utility.List(card, 10)
+	Utility.Padding(card, opts.Padding or 14)
+	Utility.List(card, opts.Gap or 10)
 
 	local pop = Create("UIScale", { Scale = 0.94, Parent = card })
 	Tween(pop, { Scale = 1 }, 0.35, Enum.EasingStyle.Quint)
@@ -1085,8 +1085,8 @@ return function(window, opts, parent)
 		Position = UDim2.fromOffset(44, 0),
 		Size = UDim2.new(1, -52, 1, 0),
 		Text = name,
-		Font = Enum.Font.GothamMedium,
-		TextSize = 13,
+		Font = Utility.Fonts.Label,
+		TextSize = 14,
 		TextTruncate = Enum.TextTruncate.AtEnd,
 		TextColor3 = theme.Tokens.SubText,
 		Parent = button,
@@ -1208,7 +1208,7 @@ return function(window, opts)
 		Size = UDim2.new(1, -34, 1, 0),
 		Text = string.upper(opts.Title or "Group"),
 		Font = Enum.Font.GothamBold,
-		TextSize = 10,
+		TextSize = 11,
 		TextTruncate = Enum.TextTruncate.AtEnd,
 		Parent = header,
 	})
@@ -1387,7 +1387,7 @@ function Window.new(library, opts)
 
 	local maid = self.Maid
 	local size = toVector(opts.Size, Vector2.new(640, 430))
-	local minSize = toVector(opts.MinSize, Vector2.new(470, 320))
+	local minSize = toVector(opts.MinSize, Vector2.new(480, 340))
 	local maxSize = toVector(opts.MaxSize, Vector2.new(1000, 760))
 	local sidebarWidth = opts.SideBarWidth or (Compat.IsMobile and 150 or 176)
 
@@ -1545,7 +1545,7 @@ function Window.new(library, opts)
 	local titleRow = Create("Frame", {
 		Name = "TitleRow",
 		Position = UDim2.new(0, 56, 0, hasSubtitle and 8 or 0),
-		Size = UDim2.new(1, -230, 0, hasSubtitle and 22 or TOPBAR),
+		Size = UDim2.new(1, -240, 0, hasSubtitle and 22 or TOPBAR),
 		BackgroundTransparency = 1,
 		ClipsDescendants = true,
 		Parent = topbar,
@@ -1581,7 +1581,7 @@ function Window.new(library, opts)
 		Size = UDim2.fromOffset(0, 16),
 		AutomaticSize = Enum.AutomaticSize.X,
 		Font = Enum.Font.GothamBold,
-		TextSize = 10,
+		TextSize = 11,
 		TextXAlignment = Enum.TextXAlignment.Center,
 		Parent = versionPill,
 	})
@@ -1592,10 +1592,10 @@ function Window.new(library, opts)
 	if hasSubtitle then
 		local subtitle = Create("TextLabel", {
 			Position = UDim2.new(0, 56, 0, 30),
-			Size = UDim2.new(1, -230, 0, 14),
+			Size = UDim2.new(1, -240, 0, 14),
 			Text = opts.Subtitle or opts.Author,
-			Font = Enum.Font.Gotham,
-			TextSize = 11,
+			Font = Utility.Fonts.Desc,
+			TextSize = 12,
 			TextTruncate = Enum.TextTruncate.AtEnd,
 			Parent = topbar,
 		})
@@ -1618,12 +1618,12 @@ function Window.new(library, opts)
 		end)
 	end
 
-	-- 30x30 hit area; glyphs are centered inside it
+	-- 34x34 hit area; glyphs are centered inside it
 	local function controlButton(offset)
 		local button = Create("TextButton", {
 			AnchorPoint = Vector2.new(1, 0.5),
 			Position = UDim2.new(1, offset, 0.5, 0),
-			Size = UDim2.fromOffset(30, 30),
+			Size = UDim2.fromOffset(34, 34),
 			BackgroundColor3 = WHITE,
 			BackgroundTransparency = 1,
 			Parent = topbar,
@@ -1632,41 +1632,51 @@ function Window.new(library, opts)
 		return button
 	end
 
-	local closeButton = controlButton(-14)
-	local closeGlyph = Icons.Bind(theme, Icons.Close(closeButton, 14, 2), "SubText")
+	local closeButton = controlButton(-12)
+	local closeGlyph = Icons.Bind(theme, Icons.Close(closeButton, 20, 2), "SubText")
 	hoverFeedback(closeButton, { closeGlyph }, "Danger")
 
 	local maximizeButton = controlButton(-50)
-	local squareGlyph = Icons.Bind(theme, Icons.Square(maximizeButton, 14, 2), "SubText")
-	local restoreGlyph = Icons.Bind(theme, Icons.Restore(maximizeButton, 14, 2), "SubText")
+	local squareGlyph = Icons.Bind(theme, Icons.Square(maximizeButton, 20, 2), "SubText")
+	local restoreGlyph = Icons.Bind(theme, Icons.Restore(maximizeButton, 20, 2), "SubText")
 	restoreGlyph.Visible = false
 	hoverFeedback(maximizeButton, { squareGlyph, restoreGlyph }, nil)
 	self._squareGlyph, self._restoreGlyph = squareGlyph, restoreGlyph
 
-	local minimizeButton = controlButton(-86)
-	local minusGlyph = Icons.Bind(theme, Icons.Minus(minimizeButton, 14, 2), "SubText")
+	local minimizeButton = controlButton(-88)
+	local minusGlyph = Icons.Bind(theme, Icons.Minus(minimizeButton, 20, 2), "SubText")
 	hoverFeedback(minimizeButton, { minusGlyph }, nil)
 
 	local themeButton
 	if opts.ThemeSwitcher ~= false then
-		themeButton = controlButton(-122)
+		themeButton = controlButton(-126)
+		-- ring + inner dot, sized to match the other 20px glyphs
+		local ring = Create("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromOffset(22, 22),
+			BackgroundTransparency = 1,
+			Parent = themeButton,
+		})
+		Utility.Corner(ring, Utility.Pill)
+		local ringStroke = Utility.Stroke(ring, WHITE, 0.2, 2)
+		Base.Gradient(theme, ringStroke, 45)
 		local dot = Create("Frame", {
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			Position = UDim2.fromScale(0.5, 0.5),
-			Size = UDim2.fromOffset(16, 16),
+			Size = UDim2.fromOffset(10, 10),
 			BackgroundColor3 = WHITE,
-			Parent = themeButton,
+			Parent = ring,
 		})
 		Utility.Corner(dot, Utility.Pill)
 		Base.Gradient(theme, dot, 45)
-		Utility.Stroke(dot, WHITE, 0.55, 1.2)
 		themeButton.MouseEnter:Connect(function()
 			Tween(themeButton, { BackgroundTransparency = 0.88 }, 0.15)
-			Tween(dot, { Size = UDim2.fromOffset(18, 18) }, 0.2, Enum.EasingStyle.Back)
+			Tween(dot, { Size = UDim2.fromOffset(13, 13) }, 0.25, Enum.EasingStyle.Back)
 		end)
 		themeButton.MouseLeave:Connect(function()
 			Tween(themeButton, { BackgroundTransparency = 1 }, 0.2)
-			Tween(dot, { Size = UDim2.fromOffset(16, 16) }, 0.2)
+			Tween(dot, { Size = UDim2.fromOffset(10, 10) }, 0.2)
 		end)
 	end
 
@@ -1756,8 +1766,8 @@ function Window.new(library, opts)
 			Position = UDim2.fromOffset(52, 28),
 			Size = UDim2.new(1, -60, 0, 16),
 			Text = "@" .. (player and player.Name or "player"),
-			Font = Enum.Font.Gotham,
-			TextSize = 11,
+			Font = Utility.Fonts.Desc,
+			TextSize = 12,
 			TextTruncate = Enum.TextTruncate.AtEnd,
 			Parent = footer,
 		})
@@ -2188,7 +2198,7 @@ function Window:OpenThemeMenu()
 		Size = UDim2.new(1, 0, 0, 18),
 		Text = "THEME",
 		Font = Enum.Font.GothamBold,
-		TextSize = 10,
+		TextSize = 11,
 		LayoutOrder = 0,
 		Parent = card,
 	})
@@ -2229,8 +2239,8 @@ function Window:OpenThemeMenu()
 			Position = UDim2.fromOffset(58, 0),
 			Size = UDim2.new(1, -86, 1, 0),
 			Text = name,
-			Font = selected and Enum.Font.GothamBold or Enum.Font.GothamMedium,
-			TextSize = 13,
+			Font = selected and Enum.Font.GothamBold or Utility.Fonts.Label,
+			TextSize = 14,
 			Parent = row,
 		})
 		theme:Bind(label, { TextColor3 = "Text" })
@@ -2303,7 +2313,7 @@ function Window:SidebarLabel(text)
 		Size = UDim2.new(1, 0, 0, 24),
 		Text = "  " .. string.upper(text),
 		Font = Enum.Font.GothamBold,
-		TextSize = 10,
+		TextSize = 11,
 		LayoutOrder = self:NextTabOrder(),
 		Parent = self.TabList,
 	})
@@ -2546,8 +2556,12 @@ local RAINBOW = ColorSequence.new({
 })
 
 local MODES = { "HEX", "RGB", "HSV", "HSL" }
-local SQUARE = 176 -- saturation / value square
-local BAR = 18
+local SQUARE = 168 -- saturation / value square
+local BAR = 14 -- hue / opacity slider thickness (handles are wider than the bar on purpose)
+local HANDLE = 22
+local INNER = 230 -- content width of the popup (card width minus padding)
+local GAP = 8 -- space between fields / tabs
+local PAD = 16
 
 --// HSL helpers (HSV comes from Color3) ----------------------------------------
 local function toHSL(color)
@@ -2598,17 +2612,27 @@ local function round(value)
 	return math.floor(value + 0.5)
 end
 
+-- Ring handle: white ring with the picked color inside, so it reads on any background.
 local function marker(parent, size)
 	local dot = Create("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Size = UDim2.fromOffset(size, size),
-		BackgroundTransparency = 1,
+		BackgroundColor3 = WHITE,
 		ZIndex = 5,
 		Parent = parent,
 	})
 	Utility.Corner(dot, Utility.Pill)
-	Utility.Stroke(dot, WHITE, 0, 2)
-	return dot
+	Utility.Stroke(dot, Color3.new(0, 0, 0), 0.55, 1)
+	local fill = Create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(1, -6, 1, -6),
+		BackgroundColor3 = WHITE,
+		ZIndex = 6,
+		Parent = dot,
+	})
+	Utility.Corner(fill, Utility.Pill)
+	return dot, fill
 end
 
 -- opts: Title, Desc, Default (Color3), Transparency (0 = opaque), Callback(color, transparency), Flag
@@ -2676,9 +2700,12 @@ return function(container, opts)
 		if ui then
 			ui.Square.BackgroundColor3 = Color3.fromHSV(hue, 1, 1)
 			ui.SquareMarker.Position = UDim2.fromScale(sat, 1 - val)
+			ui.SquareFill.BackgroundColor3 = color
 			ui.HueMarker.Position = UDim2.fromScale(0.5, hue)
+			ui.HueFill.BackgroundColor3 = Color3.fromHSV(hue, 1, 1)
 			ui.AlphaBar.BackgroundColor3 = color
 			ui.AlphaMarker.Position = UDim2.fromScale(0.5, 1 - alpha)
+			ui.AlphaFill.BackgroundColor3 = color
 			ui.Preview.BackgroundColor3 = color
 			ui.Preview.BackgroundTransparency = 1 - alpha
 			renderFields()
@@ -2788,16 +2815,16 @@ return function(container, opts)
 		ui.Boxes = {}
 
 		local count = mode == "HEX" and 1 or 3
-		local alphaWidth = 58
-		local fieldWidth = math.floor((236 - alphaWidth - 6 * count) / count)
+		local alphaWidth = 60
+		local fieldWidth = math.floor((INNER - alphaWidth - GAP * count) / count)
 
 		for index = 1, count do
-			local field = Base.Field(theme, row, UDim2.fromOffset(fieldWidth, 28))
+			local field = Base.Field(theme, row, UDim2.fromOffset(fieldWidth, 32))
 			field.LayoutOrder = index
 			local box = Create("TextBox", {
 				Size = UDim2.fromScale(1, 1),
 				Font = Enum.Font.GothamBold,
-				TextSize = 12,
+				TextSize = 13,
 				TextXAlignment = Enum.TextXAlignment.Center,
 				ClearTextOnFocus = false,
 				Parent = field,
@@ -2809,12 +2836,12 @@ return function(container, opts)
 			ui.Boxes[index] = box
 		end
 
-		local alphaField = Base.Field(theme, row, UDim2.fromOffset(alphaWidth, 28))
+		local alphaField = Base.Field(theme, row, UDim2.fromOffset(alphaWidth, 32))
 		alphaField.LayoutOrder = 10
 		local alphaBox = Create("TextBox", {
 			Size = UDim2.fromScale(1, 1),
 			Font = Enum.Font.GothamBold,
-			TextSize = 12,
+			TextSize = 13,
 			TextXAlignment = Enum.TextXAlignment.Center,
 			ClearTextOnFocus = false,
 			Parent = alphaField,
@@ -2836,7 +2863,9 @@ return function(container, opts)
 	local function open()
 		local popMaid = Utility.Maid.new()
 		local popup = Popup(window, {
-			Width = 264,
+			Width = INNER + PAD * 2,
+			Padding = PAD,
+			Gap = 12,
 			OnClose = function()
 				popMaid:Clean()
 				ui = nil
@@ -2849,12 +2878,12 @@ return function(container, opts)
 		el.Popup = popup
 
 		--// header
-		local header = Create("Frame", { Size = UDim2.new(1, 0, 0, 22), BackgroundTransparency = 1, LayoutOrder = 1, Parent = card })
+		local header = Create("Frame", { Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1, LayoutOrder = 1, Parent = card })
 		local title = Create("TextLabel", {
-			Size = UDim2.new(1, -60, 1, 0),
+			Size = UDim2.new(1, -90, 1, 0),
 			Text = opts.Title or "Color",
 			Font = Enum.Font.GothamBold,
-			TextSize = 14,
+			TextSize = 16,
 			TextTruncate = Enum.TextTruncate.AtEnd,
 			Parent = header,
 		})
@@ -2862,22 +2891,33 @@ return function(container, opts)
 
 		ui.Preview = Create("Frame", {
 			AnchorPoint = Vector2.new(1, 0.5),
-			Position = UDim2.new(1, -30, 0.5, 0),
-			Size = UDim2.fromOffset(32, 16),
+			Position = UDim2.new(1, -38, 0.5, 0),
+			Size = UDim2.fromOffset(36, 20),
 			BackgroundColor3 = current(),
 			Parent = header,
 		})
-		Utility.Corner(ui.Preview, 5)
+		Utility.Corner(ui.Preview, 6)
 		Utility.Stroke(ui.Preview, WHITE, 0.6, 1)
 
 		local closeButton = Create("TextButton", {
 			AnchorPoint = Vector2.new(1, 0.5),
 			Position = UDim2.fromScale(1, 0.5),
-			Size = UDim2.fromOffset(22, 22),
+			Size = UDim2.fromOffset(32, 32),
+			BackgroundColor3 = WHITE,
+			BackgroundTransparency = 1,
 			Parent = header,
 		})
-		local closeGlyph = Icons.Close(closeButton, 12, 2)
+		Utility.Corner(closeButton, 9)
+		local closeGlyph = Icons.Close(closeButton, 18, 2)
 		Icons.Bind(theme, closeGlyph, "SubText")
+		closeButton.MouseEnter:Connect(function()
+			Tween(closeButton, { BackgroundTransparency = 0.88 }, 0.15)
+			Icons.SetColor(closeGlyph, theme.Tokens.Danger)
+		end)
+		closeButton.MouseLeave:Connect(function()
+			Tween(closeButton, { BackgroundTransparency = 1 }, 0.2)
+			Icons.SetColor(closeGlyph, theme.Tokens.SubText)
+		end)
 		popMaid:Give(closeButton.MouseButton1Click:Connect(function()
 			popup:Close()
 		end))
@@ -2897,22 +2937,22 @@ return function(container, opts)
 		local blackLayer = Create("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0), Parent = ui.Square })
 		Utility.Corner(blackLayer, 8)
 		Create("UIGradient", { Rotation = 90, Transparency = NumberSequence.new(1, 0), Parent = blackLayer })
-		ui.SquareMarker = marker(ui.Square, 14)
+		ui.SquareMarker, ui.SquareFill = marker(ui.Square, 20)
 		local squareHit = Create("TextButton", { Size = UDim2.fromScale(1, 1), ZIndex = 6, Parent = ui.Square })
 
 		local hueBar = Create("Frame", {
-			Position = UDim2.fromOffset(SQUARE + 10, 0),
+			Position = UDim2.fromOffset(SQUARE + 16, 0),
 			Size = UDim2.fromOffset(BAR, SQUARE),
 			BackgroundColor3 = WHITE,
 			Parent = area,
 		})
 		Utility.Corner(hueBar, Utility.Pill)
 		Create("UIGradient", { Rotation = 90, Color = RAINBOW, Parent = hueBar })
-		ui.HueMarker = marker(hueBar, 16)
+		ui.HueMarker, ui.HueFill = marker(hueBar, HANDLE)
 		local hueHit = Create("TextButton", { Size = UDim2.fromScale(1, 1), ZIndex = 6, Parent = hueBar })
 
 		ui.AlphaBar = Create("Frame", {
-			Position = UDim2.fromOffset(SQUARE + 10 + BAR + 8, 0),
+			Position = UDim2.fromOffset(SQUARE + 16 + BAR + 16, 0),
 			Size = UDim2.fromOffset(BAR, SQUARE),
 			BackgroundColor3 = current(),
 			Parent = area,
@@ -2920,7 +2960,7 @@ return function(container, opts)
 		Utility.Corner(ui.AlphaBar, Utility.Pill)
 		Create("UIGradient", { Rotation = 90, Transparency = NumberSequence.new(0, 0.95), Parent = ui.AlphaBar })
 		Utility.Stroke(ui.AlphaBar, WHITE, 0.85, 1)
-		ui.AlphaMarker = marker(ui.AlphaBar, 16)
+		ui.AlphaMarker, ui.AlphaFill = marker(ui.AlphaBar, HANDLE)
 		local alphaHit = Create("TextButton", { Size = UDim2.fromScale(1, 1), ZIndex = 6, Parent = ui.AlphaBar })
 
 		local function ratio(frame, position, axis)
@@ -2945,8 +2985,9 @@ return function(container, opts)
 		end)
 
 		--// mode tabs
-		local tabs = Create("Frame", { Size = UDim2.new(1, 0, 0, 26), BackgroundTransparency = 1, LayoutOrder = 3, Parent = card })
-		Utility.List(tabs, 4, Enum.FillDirection.Horizontal)
+		local tabs = Create("Frame", { Size = UDim2.new(1, 0, 0, 32), BackgroundTransparency = 1, LayoutOrder = 3, Parent = card })
+		Utility.List(tabs, GAP, Enum.FillDirection.Horizontal)
+		local tabWidth = math.floor((INNER - GAP * (#MODES - 1)) / #MODES)
 		local row
 		local tabButtons = {}
 
@@ -2960,18 +3001,18 @@ return function(container, opts)
 
 		for index, name in ipairs(MODES) do
 			local button = Create("TextButton", {
-				Size = UDim2.new(1 / #MODES, -3, 1, 0),
+				Size = UDim2.fromOffset(tabWidth, 32),
 				LayoutOrder = index,
 				Parent = tabs,
 			})
 			local background = Create("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = WHITE, BackgroundTransparency = 1, Parent = button })
-			Utility.Corner(background, 7)
+			Utility.Corner(background, 9)
 			Base.Gradient(theme, background, 0)
 			local label = Create("TextLabel", {
 				Size = UDim2.fromScale(1, 1),
 				Text = name,
 				Font = Enum.Font.GothamBold,
-				TextSize = 11,
+				TextSize = 12,
 				TextXAlignment = Enum.TextXAlignment.Center,
 				Parent = button,
 			})
@@ -2988,8 +3029,8 @@ return function(container, opts)
 		end
 
 		--// fields
-		row = Create("Frame", { Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1, LayoutOrder = 4, Parent = card })
-		Utility.List(row, 6, Enum.FillDirection.Horizontal)
+		row = Create("Frame", { Size = UDim2.new(1, 0, 0, 32), BackgroundTransparency = 1, LayoutOrder = 4, Parent = card })
+		Utility.List(row, GAP, Enum.FillDirection.Horizontal)
 
 		paintTabs()
 		buildFields(row, popMaid)
@@ -3052,8 +3093,8 @@ return function(container, opts)
 	local label = Create("TextLabel", {
 		Position = UDim2.fromOffset(10, 0),
 		Size = UDim2.new(1, -34, 1, 0),
-		Font = Enum.Font.Gotham,
-		TextSize = 12,
+		Font = Utility.Fonts.Body,
+		TextSize = 13,
 		TextTruncate = Enum.TextTruncate.AtEnd,
 		Parent = field,
 	})
@@ -3078,8 +3119,8 @@ return function(container, opts)
 			Size = UDim2.new(1, -20, 1, 0),
 			PlaceholderText = "Search...",
 			Text = "",
-			Font = Enum.Font.Gotham,
-			TextSize = 12,
+			Font = Utility.Fonts.Body,
+			TextSize = 13,
 			ClearTextOnFocus = false,
 			Parent = searchField,
 		})
@@ -3167,8 +3208,8 @@ return function(container, opts)
 					Position = UDim2.fromOffset(10, 0),
 					Size = UDim2.new(1, -36, 1, 0),
 					Text = name,
-					Font = Enum.Font.Gotham,
-					TextSize = 12,
+					Font = Utility.Fonts.Body,
+					TextSize = 13,
 					TextTruncate = Enum.TextTruncate.AtEnd,
 					Parent = button,
 				})
@@ -3332,8 +3373,8 @@ return function(container, opts)
 		Size = UDim2.new(1, -20, 1, textarea and -16 or 0),
 		Text = opts.Value or opts.Default or "",
 		PlaceholderText = opts.Placeholder or "Type here...",
-		Font = Enum.Font.Gotham,
-		TextSize = 12,
+		Font = Utility.Fonts.Body,
+		TextSize = 13,
 		ClearTextOnFocus = false,
 		MultiLine = textarea,
 		TextWrapped = textarea,
@@ -3416,7 +3457,7 @@ return function(container, opts)
 	local label = Create("TextLabel", {
 		Size = UDim2.fromScale(1, 1),
 		Font = Enum.Font.GothamBold,
-		TextSize = 12,
+		TextSize = 13,
 		TextXAlignment = Enum.TextXAlignment.Center,
 		Parent = field,
 	})
@@ -3536,7 +3577,7 @@ return function(container, opts)
 		Size = UDim2.fromScale(1, 1),
 		Text = "",
 		Font = Enum.Font.GothamBold,
-		TextSize = 12,
+		TextSize = 13,
 		TextXAlignment = Enum.TextXAlignment.Center,
 		ClearTextOnFocus = false,
 		Parent = box,
@@ -3706,7 +3747,7 @@ function Text.Divider(container, opts)
 	local caption = opts.Title and string.upper(opts.Title) or nil
 	local gap = 0
 	if caption then
-		local bounds = TextService:GetTextSize(caption, 10, Enum.Font.GothamBold, Vector2.new(1000, 20))
+		local bounds = TextService:GetTextSize(caption, 11, Enum.Font.GothamBold, Vector2.new(1000, 20))
 		gap = bounds.X + 24
 	end
 
@@ -3732,7 +3773,7 @@ function Text.Divider(container, opts)
 			Size = UDim2.new(0, gap, 1, 0),
 			Text = caption,
 			Font = Enum.Font.GothamBold,
-			TextSize = 10,
+			TextSize = 11,
 			TextXAlignment = Enum.TextXAlignment.Center,
 			Parent = frame,
 		})
@@ -4466,8 +4507,8 @@ local Gear5 = {
 	Track = rgb(255, 255, 255),
 	TrackAlpha = 0.84,
 	Text = rgb(247, 247, 252),
-	SubText = rgb(172, 174, 190),
-	Muted = rgb(112, 114, 132),
+	SubText = rgb(192, 194, 210),
+	Muted = rgb(134, 136, 154),
 	OnAccent = rgb(28, 12, 8),
 	Accent = rgb(255, 150, 40),
 	Success = rgb(80, 230, 150),
@@ -4693,6 +4734,16 @@ function Maid:Clean()
 end
 
 Utility.Maid = Maid
+
+--// Fonts: change the whole library's typography here.
+-- Plain "Gotham" renders too thin on the glass background, so body text starts at Medium.
+Utility.Fonts = {
+	Title = Enum.Font.GothamBold,
+	Heading = Enum.Font.GothamBold,
+	Label = Enum.Font.GothamSemibold,
+	Body = Enum.Font.GothamMedium,
+	Desc = Enum.Font.GothamMedium,
+}
 
 --// Instance creation
 local TEXT_CLASSES = { TextLabel = true, TextButton = true, TextBox = true }
@@ -4973,7 +5024,7 @@ if env.MugiwaraUI and type(env.MugiwaraUI.Destroy) == "function" then
 end
 
 local Library = {
-	Version = "0.2.1",
+	Version = "0.2.2",
 	Windows = {},
 	Theme = Theme.new("Gear5"),
 	Icons = Icons,
