@@ -122,40 +122,119 @@ local function hashText(text)
 	return string.format("%08x", hash)
 end
 
+local ASSET_IMAGE, ASSET_DECAL = 1, 13
+local resolvedAssets = {}
+
+-- Roblox Store images are almost always Decal assets, and an ImageLabel cannot show a Decal id
+-- (it renders nothing). A Decal wraps the real image, so the image id is read from the Decal.
+-- Returns the usable image string, or nil plus the reason it cannot be used.
+local function imageFromAssetId(id)
+	if resolvedAssets[id] then
+		return resolvedAssets[id]
+	end
+
+	local assetType
+	local ok, info = pcall(function()
+		return service("MarketplaceService"):GetProductInfo(id, Enum.InfoType.Asset)
+	end)
+	if ok and type(info) == "table" then
+		assetType = info.AssetTypeId
+	end
+
+	local image, reason
+	if assetType == ASSET_DECAL then
+		-- only Decals are ever loaded as objects, and the result is destroyed right away
+		local loaded, objects = pcall(function()
+			return game:GetObjects("rbxassetid://" .. id)
+		end)
+		local root = loaded and objects and objects[1]
+		if root then
+			local decal = root:IsA("Decal") and root or root:FindFirstChildWhichIsA("Decal", true)
+			image = decal and decal.Texture
+			pcall(function()
+				root:Destroy()
+			end)
+		end
+		if not image or image == "" then
+			image = nil
+			reason = "Asset " .. id .. " is a Decal and this executor cannot convert it (needs game:GetObjects). Use its Image id instead."
+		end
+	elseif assetType == nil or assetType == ASSET_IMAGE then
+		image = "rbxassetid://" .. id
+	else
+		reason = "Asset " .. id .. " is not an image (asset type " .. tostring(assetType) .. ")."
+	end
+
+	if image then
+		resolvedAssets[id] = image
+	end
+	return image, reason
+end
+
 -- Turns an asset id / "rbxassetid://..." / http(s) URL into something an ImageLabel accepts.
 -- URLs are downloaded once into <folder>/cache and served through getcustomasset
 -- (needs request + writefile + getcustomasset). May yield, so call it from a task.
+-- Returns the image, or nil plus a reason.
 function Compat.ResolveImage(source, folder)
-	if type(source) == "number" then
-		return "rbxassetid://" .. source
+	if type(source) == "string" then
+		source = string.gsub(source, "^%s+", "")
+		source = string.gsub(source, "%s+$", "")
 	end
-	if type(source) ~= "string" or source == "" then
+	if source == nil or source == "" then
 		return nil
+	end
+
+	local id = tonumber(source) or tonumber(string.match(tostring(source), "^rbxassetid://(%d+)$"))
+	if id then
+		return imageFromAssetId(id)
+	end
+	if type(source) ~= "string" then
+		return nil, "Unsupported image value"
 	end
 	if string.find(source, "^rbxasset") then
 		return source
 	end
-	if tonumber(source) then
-		return "rbxassetid://" .. source
-	end
+
 	if string.find(source, "^https?://") then
 		local requester = request or http_request or (syn and syn.request)
 		local assetOf = getcustomasset or getsynasset
 		if not (requester and assetOf and Compat.FilesSupported) then
-			return nil
+			return nil, "This executor cannot download URLs (needs request, writefile and getcustomasset)."
 		end
 		local path = (folder or "MugiwaraUI") .. "/cache/" .. hashText(source) .. ".png"
 		if not Compat.FileExists(path) then
 			local response = try(requester, { Url = source, Method = "GET" })
 			if not (response and response.Body and (response.StatusCode == nil or response.StatusCode == 200)) then
-				return nil
+				return nil, "Could not download the image."
 			end
 			Compat.EnsureFolder((folder or "MugiwaraUI") .. "/cache")
 			if not Compat.WriteFile(path, response.Body) then
-				return nil
+				return nil, "Could not save the image to the executor folder."
 			end
 		end
-		return try(assetOf, path)
+		local asset = try(assetOf, path)
+		if not asset then
+			return nil, "getcustomasset failed for the downloaded image."
+		end
+		return asset
+	end
+	return nil, "Unrecognized image. Use an asset id, rbxassetid://id, or an http(s) URL."
+end
+
+-- true / false when Roblox reports the load result, nil when it cannot be checked
+function Compat.ImageLoaded(label)
+	local ok, status = pcall(function()
+		local provider = service("ContentProvider")
+		provider:PreloadAsync({ label })
+		return provider:GetAssetFetchStatus(label.Image)
+	end)
+	if not ok or status == nil then
+		return nil
+	end
+	if status == Enum.AssetFetchStatus.Success then
+		return true
+	elseif status == Enum.AssetFetchStatus.Failure then
+		return false
 	end
 	return nil
 end

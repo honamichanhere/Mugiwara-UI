@@ -132,6 +132,8 @@ Two options, both optional:
 - **Wallpaper** (recommended): one image behind the whole window. The glass cards let it show through, so it reads as a single picture instead of cropped pieces. `Window:SetBackground("rbxassetid://...", 0.55, 0.45)` (image, transparency, dark scrim) or the `Background` window option.
 - **Image card**: `Image = "..."` on any element puts a picture inside that one card. It fades in from the right so the title stays readable.
 
+**Store images are Decals.** The id you copy from the Roblox Store / Toolbox is a *Decal* id, and an `ImageLabel` cannot display it. Mugiwara UI detects this and reads the real image out of the Decal for you (needs `game:GetObjects`, which most executors have). If it cannot, you get a notification saying so; then use the asset's **Image id** instead (in Studio: insert the decal, copy the `Texture` property). A notification also appears when Roblox refuses to load the image (private or moderated asset).
+
 Images can be an asset id, `rbxassetid://...`, or an http(s) URL. URLs are downloaded once into `<Folder>/cache` and need `request`, `writefile` and `getcustomasset` on the executor; otherwise they are skipped silently.
 
 ### Themes

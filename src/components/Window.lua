@@ -824,8 +824,12 @@ function Window:SetBackground(image, transparency, dim)
 	local target = transparency or 0.55
 	local shade = dim or 0.45
 	task.spawn(function()
-		local asset = Compat.ResolveImage(image, self.Folder)
-		if not asset or not label.Parent then
+		local asset, reason = Compat.ResolveImage(image, self.Folder)
+		if not label.Parent then
+			return
+		end
+		if not asset then
+			self:Notify({ Title = "Wallpaper", Content = reason or "Could not load the image.", Type = "warning", Duration = 6 })
 			return
 		end
 		label.Image = asset
@@ -833,6 +837,15 @@ function Window:SetBackground(image, transparency, dim)
 		scrim.Visible = true
 		Tween(label, { ImageTransparency = target }, 0.6)
 		Tween(scrim, { BackgroundTransparency = 1 - shade }, 0.6)
+
+		if Compat.ImageLoaded(label) == false then
+			self:Notify({
+				Title = "Wallpaper",
+				Content = "Roblox could not load this image. It may be private, moderated, or not an Image asset.",
+				Type = "warning",
+				Duration = 7,
+			})
+		end
 	end)
 end
 

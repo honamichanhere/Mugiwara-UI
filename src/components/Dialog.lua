@@ -20,24 +20,30 @@ return function(window, opts)
 	})
 	Tween(overlay, { BackgroundTransparency = 0.42 }, 0.25)
 
-	local card = Create("Frame", {
+	-- CanvasGroup so the title, text and buttons fade together with the card
+	local card = Create("CanvasGroup", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
 		Size = UDim2.new(0, 330, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundColor3 = Color3.new(0, 0, 0),
+		GroupTransparency = 1,
+		Active = true,
 		ZIndex = 51,
 		Parent = overlay,
 	})
 	Utility.Corner(card, 14)
 	theme:Bind(card, { BackgroundColor3 = "Popup", BackgroundTransparency = "PopupAlpha" })
-	local outline = Utility.Stroke(card, Color3.new(1, 1, 1), 0.3, 1.4)
+	-- not covered by GroupTransparency (it sits on the CanvasGroup itself): tweened by hand
+	local outline = Utility.Stroke(card, Color3.new(1, 1, 1), 1, 1.4)
 	Base.Gradient(theme, outline, 45)
 	Utility.Padding(card, 18, 18, 18, 18)
 	Utility.List(card, 10)
 
 	local pop = Create("UIScale", { Scale = 0.9, Parent = card })
-	Tween(pop, { Scale = 1 }, 0.35, Enum.EasingStyle.Back)
+	Tween(pop, { Scale = 1 }, 0.4, Enum.EasingStyle.Quint)
+	Tween(card, { GroupTransparency = 0 }, 0.25)
+	Tween(outline, { Transparency = 0.3 }, 0.25)
 
 	local title = Create("TextLabel", {
 		Size = UDim2.new(1, 0, 0, 0),
@@ -80,9 +86,15 @@ return function(window, opts)
 	local dialog = {}
 
 	function dialog:Close()
-		Tween(pop, { Scale = 0.92 }, 0.2)
+		if self.Closed then
+			return
+		end
+		self.Closed = true
+		Tween(pop, { Scale = 0.93 }, 0.2)
+		Tween(card, { GroupTransparency = 1 }, 0.2)
+		Tween(outline, { Transparency = 1 }, 0.2)
 		Tween(overlay, { BackgroundTransparency = 1 }, 0.2)
-		task.delay(0.2, function()
+		task.delay(0.22, function()
 			overlay:Destroy()
 		end)
 	end

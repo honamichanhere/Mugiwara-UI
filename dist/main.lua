@@ -1,4 +1,4 @@
--- Mugiwara UI v0.2.0
+-- Mugiwara UI v0.2.1
 -- Glass + neon Gear 5 UI library for Roblox script hubs.
 -- https://github.com/honamichanhere/Mugiwara-UI  |  MIT License
 
@@ -576,24 +576,30 @@ return function(window, opts)
 	})
 	Tween(overlay, { BackgroundTransparency = 0.42 }, 0.25)
 
-	local card = Create("Frame", {
+	-- CanvasGroup so the title, text and buttons fade together with the card
+	local card = Create("CanvasGroup", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
 		Size = UDim2.new(0, 330, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundColor3 = Color3.new(0, 0, 0),
+		GroupTransparency = 1,
+		Active = true,
 		ZIndex = 51,
 		Parent = overlay,
 	})
 	Utility.Corner(card, 14)
 	theme:Bind(card, { BackgroundColor3 = "Popup", BackgroundTransparency = "PopupAlpha" })
-	local outline = Utility.Stroke(card, Color3.new(1, 1, 1), 0.3, 1.4)
+	-- not covered by GroupTransparency (it sits on the CanvasGroup itself): tweened by hand
+	local outline = Utility.Stroke(card, Color3.new(1, 1, 1), 1, 1.4)
 	Base.Gradient(theme, outline, 45)
 	Utility.Padding(card, 18, 18, 18, 18)
 	Utility.List(card, 10)
 
 	local pop = Create("UIScale", { Scale = 0.9, Parent = card })
-	Tween(pop, { Scale = 1 }, 0.35, Enum.EasingStyle.Back)
+	Tween(pop, { Scale = 1 }, 0.4, Enum.EasingStyle.Quint)
+	Tween(card, { GroupTransparency = 0 }, 0.25)
+	Tween(outline, { Transparency = 0.3 }, 0.25)
 
 	local title = Create("TextLabel", {
 		Size = UDim2.new(1, 0, 0, 0),
@@ -636,9 +642,15 @@ return function(window, opts)
 	local dialog = {}
 
 	function dialog:Close()
-		Tween(pop, { Scale = 0.92 }, 0.2)
+		if self.Closed then
+			return
+		end
+		self.Closed = true
+		Tween(pop, { Scale = 0.93 }, 0.2)
+		Tween(card, { GroupTransparency = 1 }, 0.2)
+		Tween(outline, { Transparency = 1 }, 0.2)
 		Tween(overlay, { BackgroundTransparency = 1 }, 0.2)
-		task.delay(0.2, function()
+		task.delay(0.22, function()
 			overlay:Destroy()
 		end)
 	end
@@ -933,14 +945,17 @@ return function(window, opts)
 	})
 	Utility.Corner(card, 14)
 	theme:Bind(card, { BackgroundColor3 = "Popup", BackgroundTransparency = "PopupAlpha" })
-	local outline = Utility.Stroke(card, Color3.new(1, 1, 1), 0.3, 1.4)
+	-- A UIStroke on the CanvasGroup itself is NOT covered by GroupTransparency,
+	-- so its transparency is tweened by hand together with the group.
+	local outline = Utility.Stroke(card, Color3.new(1, 1, 1), 1, 1.4)
 	Base.Gradient(theme, outline, 45)
 	Utility.Padding(card, 14, 14, 14, 14)
 	Utility.List(card, 10)
 
 	local pop = Create("UIScale", { Scale = 0.94, Parent = card })
 	Tween(pop, { Scale = 1 }, 0.35, Enum.EasingStyle.Quint)
-	Tween(card, { GroupTransparency = 0 }, 0.2)
+	Tween(card, { GroupTransparency = 0 }, 0.25)
+	Tween(outline, { Transparency = 0.3 }, 0.25)
 
 	local popup = { Card = card, Overlay = overlay, Closed = false }
 
@@ -955,10 +970,12 @@ return function(window, opts)
 		if instant then
 			overlay:Destroy()
 		else
-			Tween(pop, { Scale = 0.95 }, 0.18)
-			Tween(card, { GroupTransparency = 1 }, 0.16)
-			Tween(overlay, { BackgroundTransparency = 1 }, 0.18)
-			task.delay(0.2, function()
+			-- every part runs for the same time so nothing lingers after the fade ends
+			Tween(pop, { Scale = 0.95 }, 0.2)
+			Tween(card, { GroupTransparency = 1 }, 0.2)
+			Tween(outline, { Transparency = 1 }, 0.2)
+			Tween(overlay, { BackgroundTransparency = 1 }, 0.2)
+			task.delay(0.22, function()
 				overlay:Destroy()
 			end)
 		end
@@ -2114,8 +2131,12 @@ function Window:SetBackground(image, transparency, dim)
 	local target = transparency or 0.55
 	local shade = dim or 0.45
 	task.spawn(function()
-		local asset = Compat.ResolveImage(image, self.Folder)
-		if not asset or not label.Parent then
+		local asset, reason = Compat.ResolveImage(image, self.Folder)
+		if not label.Parent then
+			return
+		end
+		if not asset then
+			self:Notify({ Title = "Wallpaper", Content = reason or "Could not load the image.", Type = "warning", Duration = 6 })
 			return
 		end
 		label.Image = asset
@@ -2123,6 +2144,15 @@ function Window:SetBackground(image, transparency, dim)
 		scrim.Visible = true
 		Tween(label, { ImageTransparency = target }, 0.6)
 		Tween(scrim, { BackgroundTransparency = 1 - shade }, 0.6)
+
+		if Compat.ImageLoaded(label) == false then
+			self:Notify({
+				Title = "Wallpaper",
+				Content = "Roblox could not load this image. It may be private, moderated, or not an Image asset.",
+				Type = "warning",
+				Duration = 7,
+			})
+		end
 	end)
 end
 
@@ -3945,40 +3975,119 @@ local function hashText(text)
 	return string.format("%08x", hash)
 end
 
+local ASSET_IMAGE, ASSET_DECAL = 1, 13
+local resolvedAssets = {}
+
+-- Roblox Store images are almost always Decal assets, and an ImageLabel cannot show a Decal id
+-- (it renders nothing). A Decal wraps the real image, so the image id is read from the Decal.
+-- Returns the usable image string, or nil plus the reason it cannot be used.
+local function imageFromAssetId(id)
+	if resolvedAssets[id] then
+		return resolvedAssets[id]
+	end
+
+	local assetType
+	local ok, info = pcall(function()
+		return service("MarketplaceService"):GetProductInfo(id, Enum.InfoType.Asset)
+	end)
+	if ok and type(info) == "table" then
+		assetType = info.AssetTypeId
+	end
+
+	local image, reason
+	if assetType == ASSET_DECAL then
+		-- only Decals are ever loaded as objects, and the result is destroyed right away
+		local loaded, objects = pcall(function()
+			return game:GetObjects("rbxassetid://" .. id)
+		end)
+		local root = loaded and objects and objects[1]
+		if root then
+			local decal = root:IsA("Decal") and root or root:FindFirstChildWhichIsA("Decal", true)
+			image = decal and decal.Texture
+			pcall(function()
+				root:Destroy()
+			end)
+		end
+		if not image or image == "" then
+			image = nil
+			reason = "Asset " .. id .. " is a Decal and this executor cannot convert it (needs game:GetObjects). Use its Image id instead."
+		end
+	elseif assetType == nil or assetType == ASSET_IMAGE then
+		image = "rbxassetid://" .. id
+	else
+		reason = "Asset " .. id .. " is not an image (asset type " .. tostring(assetType) .. ")."
+	end
+
+	if image then
+		resolvedAssets[id] = image
+	end
+	return image, reason
+end
+
 -- Turns an asset id / "rbxassetid://..." / http(s) URL into something an ImageLabel accepts.
 -- URLs are downloaded once into <folder>/cache and served through getcustomasset
 -- (needs request + writefile + getcustomasset). May yield, so call it from a task.
+-- Returns the image, or nil plus a reason.
 function Compat.ResolveImage(source, folder)
-	if type(source) == "number" then
-		return "rbxassetid://" .. source
+	if type(source) == "string" then
+		source = string.gsub(source, "^%s+", "")
+		source = string.gsub(source, "%s+$", "")
 	end
-	if type(source) ~= "string" or source == "" then
+	if source == nil or source == "" then
 		return nil
+	end
+
+	local id = tonumber(source) or tonumber(string.match(tostring(source), "^rbxassetid://(%d+)$"))
+	if id then
+		return imageFromAssetId(id)
+	end
+	if type(source) ~= "string" then
+		return nil, "Unsupported image value"
 	end
 	if string.find(source, "^rbxasset") then
 		return source
 	end
-	if tonumber(source) then
-		return "rbxassetid://" .. source
-	end
+
 	if string.find(source, "^https?://") then
 		local requester = request or http_request or (syn and syn.request)
 		local assetOf = getcustomasset or getsynasset
 		if not (requester and assetOf and Compat.FilesSupported) then
-			return nil
+			return nil, "This executor cannot download URLs (needs request, writefile and getcustomasset)."
 		end
 		local path = (folder or "MugiwaraUI") .. "/cache/" .. hashText(source) .. ".png"
 		if not Compat.FileExists(path) then
 			local response = try(requester, { Url = source, Method = "GET" })
 			if not (response and response.Body and (response.StatusCode == nil or response.StatusCode == 200)) then
-				return nil
+				return nil, "Could not download the image."
 			end
 			Compat.EnsureFolder((folder or "MugiwaraUI") .. "/cache")
 			if not Compat.WriteFile(path, response.Body) then
-				return nil
+				return nil, "Could not save the image to the executor folder."
 			end
 		end
-		return try(assetOf, path)
+		local asset = try(assetOf, path)
+		if not asset then
+			return nil, "getcustomasset failed for the downloaded image."
+		end
+		return asset
+	end
+	return nil, "Unrecognized image. Use an asset id, rbxassetid://id, or an http(s) URL."
+end
+
+-- true / false when Roblox reports the load result, nil when it cannot be checked
+function Compat.ImageLoaded(label)
+	local ok, status = pcall(function()
+		local provider = service("ContentProvider")
+		provider:PreloadAsync({ label })
+		return provider:GetAssetFetchStatus(label.Image)
+	end)
+	if not ok or status == nil then
+		return nil
+	end
+	if status == Enum.AssetFetchStatus.Success then
+		return true
+	elseif status == Enum.AssetFetchStatus.Failure then
+		return false
 	end
 	return nil
 end
@@ -4864,7 +4973,7 @@ if env.MugiwaraUI and type(env.MugiwaraUI.Destroy) == "function" then
 end
 
 local Library = {
-	Version = "0.2.0",
+	Version = "0.2.1",
 	Windows = {},
 	Theme = Theme.new("Gear5"),
 	Icons = Icons,

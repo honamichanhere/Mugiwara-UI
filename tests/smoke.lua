@@ -166,6 +166,15 @@ check(Window.ActivePopup == menu, "theme menu opens")
 menu:Close()
 Window:SetBackground(nil)
 check(not Window.BackgroundImage.Visible, "wallpaper removed")
+MOCK_ASSET_TYPES[555] = 13 -- Decal (what the Roblox Store hands out)
+Window:SetBackground("555")
+check(Window.BackgroundImage.Image == "http://www.roblox.com/asset/?id=999", "decal id is converted to its image")
+MOCK_ASSET_TYPES[556] = 1 -- real Image asset
+Window:SetBackground("rbxassetid://556")
+check(Window.BackgroundImage.Image == "rbxassetid://556", "image id is used as is")
+MOCK_ASSET_TYPES[557] = 10 -- Model: not an image
+Window:SetBackground("557")
+check(Window.BackgroundImage.Image == "rbxassetid://556", "non-image asset is rejected and leaves the wallpaper alone")
 Window:SetBackground("https://example.com/x.png") -- no request/getcustomasset in the mock: must not error
 Window:SetVersion("")
 check(not Window.VersionPill.Visible, "version hidden")

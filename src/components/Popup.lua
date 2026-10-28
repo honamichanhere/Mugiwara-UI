@@ -43,14 +43,17 @@ return function(window, opts)
 	})
 	Utility.Corner(card, 14)
 	theme:Bind(card, { BackgroundColor3 = "Popup", BackgroundTransparency = "PopupAlpha" })
-	local outline = Utility.Stroke(card, Color3.new(1, 1, 1), 0.3, 1.4)
+	-- A UIStroke on the CanvasGroup itself is NOT covered by GroupTransparency,
+	-- so its transparency is tweened by hand together with the group.
+	local outline = Utility.Stroke(card, Color3.new(1, 1, 1), 1, 1.4)
 	Base.Gradient(theme, outline, 45)
 	Utility.Padding(card, 14, 14, 14, 14)
 	Utility.List(card, 10)
 
 	local pop = Create("UIScale", { Scale = 0.94, Parent = card })
 	Tween(pop, { Scale = 1 }, 0.35, Enum.EasingStyle.Quint)
-	Tween(card, { GroupTransparency = 0 }, 0.2)
+	Tween(card, { GroupTransparency = 0 }, 0.25)
+	Tween(outline, { Transparency = 0.3 }, 0.25)
 
 	local popup = { Card = card, Overlay = overlay, Closed = false }
 
@@ -65,10 +68,12 @@ return function(window, opts)
 		if instant then
 			overlay:Destroy()
 		else
-			Tween(pop, { Scale = 0.95 }, 0.18)
-			Tween(card, { GroupTransparency = 1 }, 0.16)
-			Tween(overlay, { BackgroundTransparency = 1 }, 0.18)
-			task.delay(0.2, function()
+			-- every part runs for the same time so nothing lingers after the fade ends
+			Tween(pop, { Scale = 0.95 }, 0.2)
+			Tween(card, { GroupTransparency = 1 }, 0.2)
+			Tween(outline, { Transparency = 1 }, 0.2)
+			Tween(overlay, { BackgroundTransparency = 1 }, 0.2)
+			task.delay(0.22, function()
 				overlay:Destroy()
 			end)
 		end

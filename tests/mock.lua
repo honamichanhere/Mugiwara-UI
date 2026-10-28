@@ -375,6 +375,11 @@ local services = {
 		GetTextSize = function(_, text) return Vector2.new(#text * 6, 14) end,
 	},
 	RunService = { Heartbeat = newSignal() },
+	MarketplaceService = {
+		GetProductInfo = function(_, id)
+			return { AssetTypeId = MOCK_ASSET_TYPES[id] }
+		end,
+	},
 	Lighting = Instance.new("Folder"),
 	CoreGui = Instance.new("Folder"),
 }
@@ -386,6 +391,7 @@ game = {
 }
 workspace = { CurrentCamera = { ViewportSize = Vector2.new(1280, 720) } }
 
+MOCK_ASSET_TYPES = {}
 MOCK = { services = services, playerGui = playerGui, localPlayer = localPlayer }
 
 --// in-memory executor file api
@@ -404,4 +410,11 @@ loadstring = function(source)
 end
 game.HttpGet = function()
 	return DIST_SOURCE
+end
+
+-- a Decal asset wraps the real image; the library reads the image id from it
+game.GetObjects = function()
+	local decal = Instance.new("Decal")
+	decal.Texture = "http://www.roblox.com/asset/?id=999"
+	return { decal }
 end
