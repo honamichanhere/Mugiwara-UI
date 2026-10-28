@@ -341,6 +341,65 @@ tryIt:Button({
 	end,
 })
 
+--// 2c. More elements: ProgressBar, Code, Image, Group, Space ---------------------
+local More = Overview:Tab({ Title = "More", Icon = "lucide:layers" })
+
+local download = More:ProgressBar({
+	Title = "Download",
+	Desc = "progressBar:Set(value) animates the bar.",
+	Icon = "lucide:loader",
+	Value = 0,
+})
+
+-- Group: elements side by side, equal widths
+local presets = More:Group({ Gap = 8 })
+presets:Button({ Title = "0%", Callback = function() download:Set(0) end })
+presets:Button({ Title = "50%", Callback = function() download:Set(50) end })
+presets:Button({ Title = "100%", Callback = function() download:Set(100) end })
+
+More:Button({
+	Title = "Simulate download",
+	Icon = "lucide:play",
+	Callback = function()
+		task.spawn(function()
+			for value = 0, 100, 4 do
+				download:Set(value)
+				task.wait(0.06)
+			end
+		end)
+	end,
+})
+
+More:Space(6)
+More:Divider({ Title = "side by side" })
+local switches = More:Group()
+switches:Toggle({ Title = "Left", Flag = "group_left" })
+switches:Toggle({ Title = "Right", Flag = "group_right" })
+
+More:Divider({ Title = "code" })
+More:Code({
+	Title = "Example.lua",
+	Desc = "Lua is highlighted, long lines scroll sideways, Copy puts it on the clipboard.",
+	Code = [==[-- Teleport to the highest ground
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+
+for index = 1, 3 do
+    print("attempt", index, "of", 3.0)
+end
+
+local message = "Mugiwara UI says hi"
+return #message > 0]==],
+})
+
+More:Divider({ Title = "image" })
+More:Image({
+	Title = "Image element",
+	Desc = DEMO_IMAGE ~= "" and "Loaded from DEMO_IMAGE." or "Set DEMO_IMAGE at the top of this file to see a picture here.",
+	Image = DEMO_IMAGE ~= "" and DEMO_IMAGE or nil,
+	Height = 160,
+})
+
 --// 3. Notifications & dialogs -------------------------------------------------
 local Feedback = Window:TabSection({ Title = "Feedback" })
 local Notifs = Feedback:Tab({ Title = "Notifications", Icon = "lucide:bell" })

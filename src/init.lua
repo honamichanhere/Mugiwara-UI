@@ -20,7 +20,7 @@ end
 local Library = {
 	Version = "@VERSION@",
 	Windows = {},
-	Theme = Theme.new("Gear5"),
+	Theme = Theme.new("Gear 5"),
 	Icons = Icons,
 	IconSets = IconSets,
 	Compat = Compat,

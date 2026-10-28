@@ -144,6 +144,49 @@ section:SetOpen(false)
 section:ToggleOpen()
 check(section.Open == true, "section reopen")
 
+--// ProgressBar, Code, Image, Group, Space
+local bar = Main:ProgressBar({ Title = "Load", Value = 25 })
+check(bar.Value == 25, "progress bar default value")
+bar:Set(80)
+check(bar.Value == 80, "progress bar set")
+bar:Set(500)
+check(bar.Value == 100, "progress bar clamps high")
+bar:Set(-5)
+check(bar.Value == 0, "progress bar clamps low")
+bar:SetText("custom")
+bar:Set(10, true)
+
+local snippet = [=[local x = 5 -- note
+print("a<b")]=]
+local codeEl = Main:Code({ Title = "Snippet", Code = snippet })
+check(string.find(codeEl.TextLabel.Text, "<font", 1, true), "lua code is highlighted")
+check(string.find(codeEl.TextLabel.Text, "&lt;", 1, true), "rich text characters are escaped")
+codeEl.CopyButton.MouseButton1Click:Fire()
+check(MOCK.clipboard == snippet, "the copy button copies the raw code")
+codeEl:Set("return 1")
+check(codeEl:Get() == "return 1" and string.find(codeEl.TextLabel.Text, "return", 1, true), "Code:Set updates the text")
+Main:Code({ Code = [=[--[[ long
+comment ]] local n = 0xFF + 3.5 local s = [[raw]] local t = 'it's' local u = "x\"y"]=], Copy = false })
+local plain = Main:Code({ Code = "a <b> c", Language = "text", Copy = false })
+check(not plain.Top.Visible, "no title and no copy button hides the header row")
+check(not string.find(plain.TextLabel.Text, "<font", 1, true) and string.find(plain.TextLabel.Text, "&lt;b&gt;", 1, true), "other languages stay plain but escaped")
+
+local pic = Main:Image({ Image = "rbxassetid://1", Height = 100 })
+check(not pic.Top.Visible and pic.ImageLabel.Image == "rbxassetid://1", "an image card without text has no header")
+pic:SetImage("rbxassetid://2")
+check(pic.ImageLabel.Image == "rbxassetid://2", "SetImage swaps the picture")
+check(Main:Image({ Title = "Captioned" }).Top.Visible, "a titled image card keeps its header")
+
+local row = Main:Group({ Gap = 6 })
+local g1 = row:Button({ Title = "A" })
+local g2 = row:Toggle({ Title = "B" })
+local g3 = row:Button({ Title = "C" })
+check(math.abs(g1.Frame.Size.X.Scale - 1 / 3) < 1e-9 and g1.Frame.Size.X.Offset == -4, "group children share the width equally")
+check(row.Depth == Main.Depth, "a group does not count as a section level")
+g3:Destroy()
+check(math.abs(g1.Frame.Size.X.Scale - 0.5) < 1e-9 and g2.Frame.Size.X.Offset == -3, "the group rebalances when a child is removed")
+check(Main:Space(20).Frame.Size.Y.Offset == 20 and Main:Space().Frame.Size.Y.Offset == 12, "Space height")
+
 --// icon sets (Footagesus/Icons)
 local houseTab = Window:Tab({ Title = "House", Icon = "house" })
 check(houseTab.IconLabel and houseTab.IconLabel.Image == "rbxassetid://111", "flat set icon (default lucide)")
@@ -238,7 +281,7 @@ end
 check(UI:SetTheme("DoesNotExist") == false, "unknown theme")
 UI:AddTheme("Custom", { Accent = Color3.fromRGB(1, 2, 3), Gradient = { Color3.fromRGB(1, 1, 1), Color3.fromRGB(2, 2, 2) } })
 check(UI:SetTheme("Custom"), "custom theme")
-UI:SetTheme("Gear5")
+UI:SetTheme("Gear 5")
 MOCK.services.RunService.Heartbeat:Fire() -- gradient cross-fade runs without error
 
 --// config round trip

@@ -17,11 +17,17 @@ Element.__index = Element
 function Element:SetTitle(text)
 	self.TitleLabel.Text = text or ""
 	self.TitleLabel.Visible = text ~= nil and text ~= ""
+	if self.TitleLabel.Visible then
+		self.Top.Visible = true
+	end
 end
 
 function Element:SetDesc(text)
 	self.DescLabel.Text = text or ""
 	self.DescLabel.Visible = text ~= nil and text ~= ""
+	if self.DescLabel.Visible then
+		self.Top.Visible = true
+	end
 end
 
 -- icon: asset id or icon-set name ("lucide:house"); nil removes it. Returns false when it was not found.
@@ -228,6 +234,10 @@ function Base.Card(container, opts, rightWidth, rightHeight)
 	el._applyIcon = applyIcon
 	applyIcon(opts.Icon)
 
+	-- no text, icon or control slot: the header row is hidden so it does not leave an empty strip
+	local hasHeader = (opts.Title ~= nil and opts.Title ~= "") or (opts.Desc ~= nil and opts.Desc ~= "") or iconLabel ~= nil or rightWidth ~= nil
+	top.Visible = hasHeader
+
 	if rightWidth then
 		el.Right = Create("Frame", {
 			Name = "Right",
@@ -270,15 +280,17 @@ end
 
 --// Drawers ----------------------------------------------------------------------
 -- Fixed-height strip under the title row (slider bar, textarea...).
-function Base.Extra(el, height)
+-- topPad: space above the strip (default 10; pass 0 when the card has no header row)
+function Base.Extra(el, height, topPad)
+	local pad = topPad == nil and 10 or topPad
 	local extra = Create("Frame", {
 		Name = "Extra",
-		Size = UDim2.new(1, 0, 0, height + 10),
+		Size = UDim2.new(1, 0, 0, height + pad),
 		BackgroundTransparency = 1,
 		LayoutOrder = 2,
 		Parent = el.Content,
 	})
-	Utility.Padding(extra, 10, 0, 0, 0)
+	Utility.Padding(extra, pad, 0, 0, 0)
 	return extra
 end
 

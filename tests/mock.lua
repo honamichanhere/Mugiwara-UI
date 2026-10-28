@@ -261,10 +261,18 @@ local function setParent(inst, parent)
 				break
 			end
 		end
+		local removed = rawget(old, "_props").ChildRemoved
+		if removed then
+			removed:Fire(inst)
+		end
 	end
 	props.Parent = parent
 	if parent then
 		table.insert(rawget(parent, "_children"), inst)
+		local added = rawget(parent, "_props").ChildAdded
+		if added then
+			added:Fire(inst)
+		end
 	end
 end
 

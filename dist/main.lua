@@ -1,4 +1,4 @@
--- Mugiwara UI v0.4.0
+-- Mugiwara UI v0.5.0
 -- Glass + neon Gear 5 UI library for Roblox script hubs.
 -- https://github.com/honamichanhere/Mugiwara-UI  |  MIT License
 
@@ -38,11 +38,17 @@ Element.__index = Element
 function Element:SetTitle(text)
 	self.TitleLabel.Text = text or ""
 	self.TitleLabel.Visible = text ~= nil and text ~= ""
+	if self.TitleLabel.Visible then
+		self.Top.Visible = true
+	end
 end
 
 function Element:SetDesc(text)
 	self.DescLabel.Text = text or ""
 	self.DescLabel.Visible = text ~= nil and text ~= ""
+	if self.DescLabel.Visible then
+		self.Top.Visible = true
+	end
 end
 
 -- icon: asset id or icon-set name ("lucide:house"); nil removes it. Returns false when it was not found.
@@ -249,6 +255,10 @@ function Base.Card(container, opts, rightWidth, rightHeight)
 	el._applyIcon = applyIcon
 	applyIcon(opts.Icon)
 
+	-- no text, icon or control slot: the header row is hidden so it does not leave an empty strip
+	local hasHeader = (opts.Title ~= nil and opts.Title ~= "") or (opts.Desc ~= nil and opts.Desc ~= "") or iconLabel ~= nil or rightWidth ~= nil
+	top.Visible = hasHeader
+
 	if rightWidth then
 		el.Right = Create("Frame", {
 			Name = "Right",
@@ -291,15 +301,17 @@ end
 
 --// Drawers ----------------------------------------------------------------------
 -- Fixed-height strip under the title row (slider bar, textarea...).
-function Base.Extra(el, height)
+-- topPad: space above the strip (default 10; pass 0 when the card has no header row)
+function Base.Extra(el, height, topPad)
+	local pad = topPad == nil and 10 or topPad
 	local extra = Create("Frame", {
 		Name = "Extra",
-		Size = UDim2.new(1, 0, 0, height + 10),
+		Size = UDim2.new(1, 0, 0, height + pad),
 		BackgroundTransparency = 1,
 		LayoutOrder = 2,
 		Parent = el.Content,
 	})
-	Utility.Padding(extra, 10, 0, 0, 0)
+	Utility.Padding(extra, pad, 0, 0, 0)
 	return extra
 end
 
@@ -395,6 +407,9 @@ local Input = Import("components/elements/Input")
 local Keybind = Import("components/elements/Keybind")
 local Colorpicker = Import("components/elements/Colorpicker")
 local Text = Import("components/elements/Text")
+local ProgressBar = Import("components/elements/ProgressBar")
+local Code = Import("components/elements/Code")
+local ImageElement = Import("components/elements/Image")
 
 local Create, Tween = Utility.Create, Utility.Tween
 
@@ -459,6 +474,74 @@ end
 
 function Container:Divider(opts)
 	return Text.Divider(self, opts)
+end
+
+function Container:ProgressBar(opts)
+	return ProgressBar(self, opts)
+end
+
+function Container:Code(opts)
+	return Code(self, opts)
+end
+
+function Container:Image(opts)
+	return ImageElement(self, opts)
+end
+
+-- Blank vertical gap: tab:Space() or tab:Space(24)
+function Container:Space(height)
+	local frame = Create("Frame", {
+		Name = "Space",
+		Size = UDim2.new(1, 0, 0, type(height) == "number" and height or 12),
+		BackgroundTransparency = 1,
+		LayoutOrder = self:NextOrder(),
+		Parent = self.Holder,
+	})
+	return { Frame = frame, SetVisible = function(_, visible) frame.Visible = visible end, Destroy = function() frame:Destroy() end }
+end
+
+-- Row: the elements created on the returned container share the width equally, side by side.
+--   local row = tab:Group({ Gap = 8 })
+--   row:Button({ Title = "A" }); row:Button({ Title = "B" })
+-- Best with Buttons, Toggles and ProgressBars; wide controls (dropdown, input) get cramped.
+function Container:Group(opts)
+	opts = opts or {}
+	local gap = opts.Gap or 8
+
+	local row = Create("Frame", {
+		Name = "Group",
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		LayoutOrder = self:NextOrder(),
+		Parent = self.Holder,
+	})
+	Utility.List(row, gap, Enum.FillDirection.Horizontal)
+
+	local group = Container.new(self.Window, row, self.Page, self.Depth)
+	group.Frame = row
+
+	local function rebalance()
+		local items = {}
+		for _, child in ipairs(row:GetChildren()) do
+			if child:IsA("GuiObject") then
+				table.insert(items, child)
+			end
+		end
+		local count = #items
+		for _, item in ipairs(items) do
+			item.Size = UDim2.new(1 / count, -gap * (count - 1) / count, 0, 0) -- height stays automatic
+		end
+	end
+	row.ChildAdded:Connect(rebalance)
+	row.ChildRemoved:Connect(rebalance)
+
+	function group:Destroy()
+		row:Destroy()
+	end
+
+	table.insert(self.Elements, group)
+	return group
 end
 
 -- Collapsible group. Returns another Container, so sections can hold any element.
@@ -734,7 +817,10 @@ end
 end
 
 __modules["components/KeySystem"] = function(Import)
---// Key UI: a separate glass card that asks for a key and validates it with YOUR function.
+--// Key UI: a separate, wide (21:9) glass card that asks for a key and validates it with YOUR function.
+--// Left side: who you are (icon, title, note). Right side: key field, status, Verify, link buttons.
+--// An accepted key is always saved (when the executor has file access); next run it is validated again
+--// and, if it still passes, the Key UI never appears.
 --//
 --//   local KeyUI = MugiwaraUI:KeySystem({
 --//       Title = "Mugiwara Hub",
@@ -752,8 +838,9 @@ local Shell = Import("components/Shell")
 
 local Create, Tween = Utility.Create, Utility.Tween
 
-local WIDTH = 420
-local PAD = 24
+-- 21:9
+local WIDTH, HEIGHT = 700, 300
+local SIDE = 250
 
 local function trim(text)
 	text = string.gsub(tostring(text or ""), "^%s+", "")
@@ -761,9 +848,10 @@ local function trim(text)
 	return text
 end
 
--- opts: Title, Subtitle, Icon, Note (false hides it), Placeholder, Folder, SaveKey (default true: offers
---       the "Remember key" switch), Remember (switch starts on), Links = { { Title, Link, Icon, Callback } },
---       Validate(key) -> valid, message  (required, may yield), OnSuccess(key), OnClose()
+-- opts: Title, Subtitle, Icon, Note (false hides it), Heading, Placeholder, Folder,
+--       SaveKey (default true; false = never save the key), Links = { { Title, Link, Icon, Callback } },
+--       Validate(key) -> true | false, message  (required, may yield; only `true` accepts),
+--       OnSuccess(key), OnClose()
 return function(library, opts)
 	opts = opts or {}
 	if type(opts.Validate) ~= "function" then
@@ -789,7 +877,6 @@ return function(library, opts)
 
 	local shell, status, box, submitButton, submitLabel
 	local busy, finished = false, false
-	local remember = opts.Remember == true
 
 	--// validation ---------------------------------------------------------------------
 	-- returns valid (bool), message (string|nil); errors inside Validate count as invalid
@@ -886,35 +973,29 @@ return function(library, opts)
 			local valid, message = runValidate(key)
 			if not valid then
 				busy = false -- an accepted key keeps the card locked while it plays the success animation
-			end
-
-			if valid then
-				setStatus(message or "Key accepted.", "success")
-				if submitLabel then
-					submitLabel.Text = "Access granted"
-				end
-				if submitButton then
-					submitButton.BackgroundColor3 = theme.Tokens.Success
-				end
-				if canSave then
-					if remember then
-						Compat.EnsureFolder(folder)
-						Compat.WriteFile(keyPath, key)
-					else
-						Compat.DeleteFile(keyPath)
-					end
-				end
-				Utility.SafeCall(opts.OnSuccess, key)
-				task.delay(0.9, function()
-					finish(key)
-				end)
-			else
 				setStatus(message or "Invalid key.", "error")
 				if submitLabel then
 					submitLabel.Text = "Verify Key"
 				end
 				shake()
+				return
 			end
+
+			setStatus(message or "Key accepted.", "success")
+			if submitLabel then
+				submitLabel.Text = "Access granted"
+			end
+			if submitButton then
+				submitButton.BackgroundColor3 = theme.Tokens.Success
+			end
+			if canSave then
+				Compat.EnsureFolder(folder)
+				Compat.WriteFile(keyPath, key)
+			end
+			Utility.SafeCall(opts.OnSuccess, key)
+			task.delay(0.9, function()
+				finish(key)
+			end)
 		end)
 	end
 
@@ -923,55 +1004,54 @@ return function(library, opts)
 	end
 
 	local function build()
-		local hasNote = opts.Note ~= false
-		local hasLinks = #links > 0
-		local y = 20
-
-		-- vertical layout: positions are computed first so the card gets exactly the height it needs
-		local headerY = y
-		y = y + 64
-		local noteY = y
-		if hasNote then
-			y = y + 44
-		end
-		local fieldY = y
-		y = y + 46 + 6
-		local statusY = y
-		y = y + 20 + 6
-		local rememberY = y
-		if canSave then
-			y = y + 26 + 10
-		end
-		local verifyY = y
-		y = y + 46 + 10
-		local linksY = y
-		if hasLinks then
-			y = y + 34
-		end
-		local height = y + (hasLinks and 24 or 14)
-
 		shell = Shell.new(library, {
 			Name = "Key",
-			Size = Vector2.new(WIDTH, height),
+			Size = Vector2.new(WIDTH, HEIGHT),
 			Backdrop = 0.45,
-			MinScale = 0.55,
+			-- covers the whole screen including the top bar strip (the backdrop used to stop below it)
+			IgnoreGuiInset = true,
+			MinScale = 0.5,
 		})
 		local maid = shell.Maid
 		local card = shell.Card
 
-		--// header
-		local brand = Create("Frame", {
-			Position = UDim2.fromOffset(PAD, headerY),
-			Size = UDim2.fromOffset(44, 44),
-			BackgroundColor3 = Color3.new(1, 1, 1),
+		--// left panel: identity ---------------------------------------------------------
+		local side = Create("Frame", {
+			Name = "Side",
+			Size = UDim2.new(0, SIDE, 1, 0),
+			BackgroundColor3 = Color3.new(0, 0, 0),
 			Parent = card,
 		})
-		Utility.Corner(brand, 12)
+		theme:Bind(side, { BackgroundColor3 = "Sidebar", BackgroundTransparency = "SidebarAlpha" })
+		local sideEdge = Create("Frame", {
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.fromScale(1, 0),
+			Size = UDim2.new(0, 1, 1, 0),
+			BackgroundColor3 = Color3.new(1, 1, 1),
+			Parent = side,
+		})
+		theme:Bind(sideEdge, { BackgroundColor3 = "Stroke", BackgroundTransparency = "StrokeAlpha" })
+
+		local identity = Create("Frame", {
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			Parent = side,
+		})
+		Utility.Padding(identity, 26, 26, 28, 24)
+		Utility.List(identity, 10, Enum.FillDirection.Vertical, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center)
+
+		local brand = Create("Frame", {
+			Size = UDim2.fromOffset(64, 64),
+			BackgroundColor3 = Color3.new(1, 1, 1),
+			LayoutOrder = 1,
+			Parent = identity,
+		})
+		Utility.Corner(brand, 16)
 		Base.Gradient(theme, brand, 45)
 		local slot = Create("Frame", {
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			Position = UDim2.fromScale(0.5, 0.5),
-			Size = UDim2.fromOffset(24, 24),
+			Size = UDim2.fromOffset(34, 34),
 			BackgroundTransparency = 1,
 			Parent = brand,
 		})
@@ -987,7 +1067,7 @@ return function(library, opts)
 				Size = UDim2.fromScale(1, 1),
 				Text = string.upper(string.sub(opts.Title or "M", 1, 1)),
 				Font = Enum.Font.GothamBlack,
-				TextSize = 22,
+				TextSize = 30,
 				TextXAlignment = Enum.TextXAlignment.Center,
 				Parent = brand,
 			})
@@ -995,66 +1075,66 @@ return function(library, opts)
 		end
 
 		local title = Create("TextLabel", {
-			Position = UDim2.fromOffset(PAD + 56, headerY + 3),
-			Size = UDim2.new(1, -(PAD + 56 + 56), 0, 24),
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
 			Text = opts.Title or "Mugiwara Hub",
 			Font = Utility.Fonts.Title,
-			TextSize = 19,
-			TextTruncate = Enum.TextTruncate.AtEnd,
-			Parent = card,
+			TextSize = 23,
+			TextWrapped = true,
+			LayoutOrder = 2,
+			Parent = identity,
 		})
 		Base.Gradient(theme, title, 0)
 
 		local subtitle = Create("TextLabel", {
-			Position = UDim2.fromOffset(PAD + 56, headerY + 27),
-			Size = UDim2.new(1, -(PAD + 56 + 56), 0, 16),
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
 			Text = opts.Subtitle or "Key System",
-			Font = Utility.Fonts.Desc,
-			TextSize = 13,
-			TextTruncate = Enum.TextTruncate.AtEnd,
-			Parent = card,
+			Font = Utility.Fonts.Label,
+			TextSize = 14,
+			TextWrapped = true,
+			LayoutOrder = 3,
+			Parent = identity,
 		})
-		theme:Bind(subtitle, { TextColor3 = "SubText" })
+		theme:Bind(subtitle, { TextColor3 = "Text" })
 
-		local closeButton = Create("TextButton", {
-			AnchorPoint = Vector2.new(1, 0),
-			Position = UDim2.new(1, -14, 0, headerY - 4),
-			Size = UDim2.fromOffset(34, 34),
-			BackgroundColor3 = Color3.new(1, 1, 1),
-			BackgroundTransparency = 1,
-			Parent = card,
-		})
-		Utility.Corner(closeButton, 9)
-		local closeGlyph = Icons.Bind(theme, Icons.Close(closeButton, 20, 2), "SubText")
-		closeButton.MouseEnter:Connect(function()
-			Tween(closeButton, { BackgroundTransparency = 0.88 }, 0.15)
-			Icons.SetColor(closeGlyph, theme.Tokens.Danger)
-		end)
-		closeButton.MouseLeave:Connect(function()
-			Tween(closeButton, { BackgroundTransparency = 1 }, 0.2)
-			Icons.SetColor(closeGlyph, theme.Tokens.SubText)
-		end)
-		maid:Give(closeButton.MouseButton1Click:Connect(function()
-			KeyUI:Close()
-		end))
-
-		--// note
-		if hasNote then
+		if opts.Note ~= false then
 			local note = Create("TextLabel", {
-				Position = UDim2.fromOffset(PAD, noteY),
-				Size = UDim2.new(1, -PAD * 2, 0, 36),
+				Size = UDim2.new(1, 0, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
 				Text = opts.Note or "Enter your key to continue.",
 				Font = Utility.Fonts.Desc,
-				TextSize = 14,
+				TextSize = 13,
 				TextWrapped = true,
-				TextYAlignment = Enum.TextYAlignment.Top,
-				Parent = card,
+				LayoutOrder = 4,
+				Parent = identity,
 			})
 			theme:Bind(note, { TextColor3 = "SubText" })
 		end
 
-		--// key field
-		local field, fieldStroke = Base.Field(theme, card, UDim2.new(1, -PAD * 2, 0, 46), UDim2.fromOffset(PAD, fieldY))
+		--// right panel: the form -----------------------------------------------------------
+		local form = Create("Frame", {
+			Name = "Form",
+			Position = UDim2.fromOffset(SIDE, 0),
+			Size = UDim2.new(1, -SIDE, 1, 0),
+			BackgroundTransparency = 1,
+			Parent = card,
+		})
+		Utility.Padding(form, 24, 24, 34, 34)
+		Utility.List(form, 12, Enum.FillDirection.Vertical, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center)
+
+		local heading = Create("TextLabel", {
+			Size = UDim2.new(1, 0, 0, 26),
+			Text = opts.Heading or "Enter your key",
+			Font = Utility.Fonts.Title,
+			TextSize = 20,
+			LayoutOrder = 1,
+			Parent = form,
+		})
+		theme:Bind(heading, { TextColor3 = "Text" })
+
+		local field, fieldStroke = Base.Field(theme, form, UDim2.new(1, 0, 0, 48))
+		field.LayoutOrder = 2
 		local keyIconSlot = Create("Frame", {
 			AnchorPoint = Vector2.new(0, 0.5),
 			Position = UDim2.new(0, 14, 0.5, 0),
@@ -1098,7 +1178,7 @@ return function(library, opts)
 			local paste = Create("TextButton", {
 				AnchorPoint = Vector2.new(1, 0.5),
 				Position = UDim2.new(1, -8, 0.5, 0),
-				Size = UDim2.fromOffset(52, 30),
+				Size = UDim2.fromOffset(52, 32),
 				BackgroundColor3 = Color3.new(1, 1, 1),
 				Text = "Paste",
 				Font = Enum.Font.GothamBold,
@@ -1116,75 +1196,23 @@ return function(library, opts)
 			end))
 		end
 
-		--// status line
 		status = Create("TextLabel", {
-			Position = UDim2.fromOffset(PAD + 2, statusY),
-			Size = UDim2.new(1, -(PAD + 2) * 2, 0, 20),
+			Size = UDim2.new(1, 0, 0, 18),
 			Text = "",
 			Font = Utility.Fonts.Label,
 			TextSize = 13,
 			TextTruncate = Enum.TextTruncate.AtEnd,
-			Parent = card,
+			LayoutOrder = 3,
+			Parent = form,
 		})
 		KeyUI.Status = status
 
-		--// remember switch
-		if canSave then
-			local row = Create("TextButton", {
-				Position = UDim2.fromOffset(PAD, rememberY),
-				Size = UDim2.new(1, -PAD * 2, 0, 26),
-				Parent = card,
-			})
-			local rowLabel = Create("TextLabel", {
-				Position = UDim2.fromOffset(2, 0),
-				Size = UDim2.new(1, -60, 1, 0),
-				Text = "Remember key on this device",
-				Font = Utility.Fonts.Body,
-				TextSize = 14,
-				Parent = row,
-			})
-			theme:Bind(rowLabel, { TextColor3 = "Text" })
-
-			local track = Create("Frame", {
-				AnchorPoint = Vector2.new(1, 0.5),
-				Position = UDim2.new(1, 0, 0.5, 0),
-				Size = UDim2.fromOffset(40, 22),
-				BackgroundColor3 = Color3.new(1, 1, 1),
-				Parent = row,
-			})
-			Utility.Corner(track, Utility.Pill)
-			theme:Bind(track, { BackgroundColor3 = "Track", BackgroundTransparency = "TrackAlpha" })
-			local fill = Create("Frame", {
-				Size = UDim2.fromScale(1, 1),
-				BackgroundColor3 = Color3.new(1, 1, 1),
-				BackgroundTransparency = remember and 0 or 1,
-				Parent = track,
-			})
-			Utility.Corner(fill, Utility.Pill)
-			Base.Gradient(theme, fill, 0)
-			local knob = Create("Frame", {
-				AnchorPoint = Vector2.new(0, 0.5),
-				Position = UDim2.new(0, remember and 21 or 3, 0.5, 0),
-				Size = UDim2.fromOffset(16, 16),
-				BackgroundColor3 = Color3.new(1, 1, 1),
-				Parent = track,
-			})
-			Utility.Corner(knob, Utility.Pill)
-
-			maid:Give(row.MouseButton1Click:Connect(function()
-				remember = not remember
-				Tween(fill, { BackgroundTransparency = remember and 0 or 1 }, 0.2)
-				Tween(knob, { Position = UDim2.new(0, remember and 21 or 3, 0.5, 0) }, 0.22)
-			end))
-		end
-
-		--// verify button
 		-- centered anchor so the press animation shrinks toward the middle
 		local verifyHolder = Create("Frame", {
-			Position = UDim2.fromOffset(PAD, verifyY),
-			Size = UDim2.new(1, -PAD * 2, 0, 46),
+			Size = UDim2.new(1, 0, 0, 48),
 			BackgroundTransparency = 1,
-			Parent = card,
+			LayoutOrder = 4,
+			Parent = form,
 		})
 		submitButton = Create("TextButton", {
 			AnchorPoint = Vector2.new(0.5, 0.5),
@@ -1215,14 +1243,14 @@ return function(library, opts)
 			submit()
 		end))
 
-		--// links
+		--// links ------------------------------------------------------------------------------
 		KeyUI.LinkButtons = {}
-		if hasLinks then
+		if #links > 0 then
 			local row = Create("Frame", {
-				Position = UDim2.fromOffset(PAD, linksY),
-				Size = UDim2.new(1, -PAD * 2, 0, 34),
+				Size = UDim2.new(1, 0, 0, 36),
 				BackgroundTransparency = 1,
-				Parent = card,
+				LayoutOrder = 5,
+				Parent = form,
 			})
 			local gap = 8
 			local count = #links
@@ -1284,6 +1312,30 @@ return function(library, opts)
 				end))
 			end
 		end
+
+		--// close ---------------------------------------------------------------------------------
+		local closeButton = Create("TextButton", {
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.new(1, -14, 0, 14),
+			Size = UDim2.fromOffset(34, 34),
+			BackgroundColor3 = Color3.new(1, 1, 1),
+			BackgroundTransparency = 1,
+			ZIndex = 5,
+			Parent = card,
+		})
+		Utility.Corner(closeButton, 9)
+		local closeGlyph = Icons.Bind(theme, Icons.Close(closeButton, 20, 2), "SubText")
+		closeButton.MouseEnter:Connect(function()
+			Tween(closeButton, { BackgroundTransparency = 0.88 }, 0.15)
+			Icons.SetColor(closeGlyph, theme.Tokens.Danger)
+		end)
+		closeButton.MouseLeave:Connect(function()
+			Tween(closeButton, { BackgroundTransparency = 1 }, 0.2)
+			Icons.SetColor(closeGlyph, theme.Tokens.SubText)
+		end)
+		maid:Give(closeButton.MouseButton1Click:Connect(function()
+			KeyUI:Close()
+		end))
 
 		shell:Show()
 		if not Compat.IsMobile then
@@ -4041,6 +4093,199 @@ return function(container, opts)
 end
 end
 
+__modules["components/elements/Code"] = function(Import)
+local Utility = Import("core/Utility")
+local Compat = Import("core/Compat")
+local Base = Import("components/Base")
+
+local Create = Utility.Create
+
+local KEYWORDS = {}
+for word in string.gmatch(
+	"and break do else elseif end false for function goto if in local nil not or repeat return then true until while continue",
+	"%a+"
+) do
+	KEYWORDS[word] = true
+end
+
+-- RichText needs & < > escaped
+local function escape(text)
+	text = string.gsub(text, "&", "&amp;")
+	text = string.gsub(text, "<", "&lt;")
+	text = string.gsub(text, ">", "&gt;")
+	return text
+end
+
+local function hex(color)
+	return "#" .. Utility.ToHex(color)
+end
+
+-- Small Lua highlighter: comments, strings, numbers, keywords. Returns RichText.
+local function highlight(code, tokens)
+	local colors = {
+		comment = hex(tokens.Muted),
+		string = hex(tokens.Success),
+		number = hex(tokens.Warning),
+		keyword = hex(tokens.Accent),
+		default = hex(tokens.Text),
+	}
+	local out = {}
+	local function emit(kind, text)
+		table.insert(out, string.format('<font color="%s">%s</font>', colors[kind], escape(text)))
+	end
+
+	local index, length = 1, #code
+	while index <= length do
+		local char = string.sub(code, index, index)
+		local two = string.sub(code, index, index + 1)
+
+		if two == "--" then
+			local longClose = string.match(code, "^%-%-%[(=*)%[", index) -- --[[ ... ]]
+			local stop
+			if longClose then
+				local _, closeEnd = string.find(code, "]" .. longClose .. "]", index, true)
+				stop = closeEnd or length
+			else
+				stop = (string.find(code, "\n", index, true) or (length + 1)) - 1
+			end
+			emit("comment", string.sub(code, index, stop))
+			index = stop + 1
+		elseif char == '"' or char == "'" then
+			local stop = index + 1
+			while stop <= length do
+				local current = string.sub(code, stop, stop)
+				if current == "\\" then
+					stop = stop + 2
+				elseif current == char or current == "\n" then
+					break
+				else
+					stop = stop + 1
+				end
+			end
+			emit("string", string.sub(code, index, math.min(stop, length)))
+			index = stop + 1
+		elseif string.find(code, "^%[=*%[", index) then
+			local level = string.match(code, "^%[(=*)%[", index)
+			local _, closeEnd = string.find(code, "]" .. level .. "]", index, true)
+			local stop = closeEnd or length
+			emit("string", string.sub(code, index, stop))
+			index = stop + 1
+		elseif string.find(char, "%d") and not string.find(string.sub(code, index - 1, index - 1), "[%w_]") then
+			local number = string.match(code, "^0[xX]%x+", index) or string.match(code, "^%d+%.?%d*", index)
+			emit("number", number)
+			index = index + #number
+		elseif string.find(char, "[%a_]") then
+			local word = string.match(code, "^[%w_]+", index)
+			emit(KEYWORDS[word] and "keyword" or "default", word)
+			index = index + #word
+		else
+			emit("default", char)
+			index = index + 1
+		end
+	end
+	return table.concat(out)
+end
+
+-- opts: Title, Desc, Code, Language ("lua" highlights; anything else is plain), Copy (default true),
+--       Height (max pixel height of the code area, default 220)
+-- el:Set(code) replaces the code, el:Get() returns it.
+return function(container, opts)
+	opts = opts or {}
+	local theme = container.Window.Theme
+	local showCopy = opts.Copy ~= false
+	local el = Base.Card(container, opts, showCopy and 76 or nil, 30)
+
+	local code = tostring(opts.Code or "")
+	local lines = select(2, string.gsub(code, "\n", "\n")) + 1
+	local maxHeight = opts.Height or 220
+	local hasHeader = el.Top.Visible
+	local extra = Base.Extra(el, math.min(math.max(lines * 16 + 22, 56), maxHeight), hasHeader and 10 or 0)
+
+	local box = Create("Frame", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.new(0, 0, 0),
+		ClipsDescendants = true,
+		Parent = extra,
+	})
+	Utility.Corner(box, 8)
+	theme:Bind(box, { BackgroundColor3 = "Field", BackgroundTransparency = "FieldAlpha" })
+	local boxStroke = Utility.Stroke(box, Color3.new(1, 1, 1), 0.9, 1)
+	theme:Bind(boxStroke, { Color = "Stroke", Transparency = "StrokeAlpha" })
+
+	-- scrolls both ways: long lines are not wrapped
+	local scroll = Create("ScrollingFrame", {
+		Size = UDim2.fromScale(1, 1),
+		AutomaticCanvasSize = Enum.AutomaticSize.XY,
+		ScrollingDirection = Enum.ScrollingDirection.XY,
+		ScrollBarThickness = 3,
+		Parent = box,
+	})
+	Utility.Padding(scroll, 10, 10, 12, 12)
+
+	local text = Create("TextLabel", {
+		Size = UDim2.fromOffset(0, 0),
+		AutomaticSize = Enum.AutomaticSize.XY,
+		Font = Enum.Font.Code,
+		TextSize = 13,
+		RichText = true,
+		TextWrapped = false,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		Parent = scroll,
+	})
+	theme:Bind(text, { TextColor3 = "Text" })
+	el.TextLabel = text
+
+	local function render()
+		if (opts.Language or "lua") == "lua" then
+			text.Text = highlight(code, theme.Tokens)
+		else
+			text.Text = escape(code)
+		end
+	end
+	render()
+	el.Value = code
+	el.Maid:Give(theme:OnChange(render))
+
+	function el:Set(newCode)
+		code = tostring(newCode or "")
+		self.Value = code
+		render()
+	end
+
+	if showCopy then
+		local copy = Create("TextButton", {
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.fromScale(1, 0.5),
+			Size = UDim2.fromOffset(76, 30),
+			BackgroundColor3 = Color3.new(1, 1, 1),
+			Text = "Copy",
+			Font = Enum.Font.GothamBold,
+			TextSize = 13,
+			TextXAlignment = Enum.TextXAlignment.Center,
+			Parent = el.Right,
+		})
+		el.CopyButton = copy
+		Utility.Corner(copy, 8)
+		theme:Bind(copy, { BackgroundColor3 = "Card", BackgroundTransparency = "CardHoverAlpha", TextColor3 = "Text" })
+
+		local token = 0
+		el.Maid:Give(copy.MouseButton1Click:Connect(function()
+			token = token + 1
+			local mine = token
+			copy.Text = Compat.SetClipboard(code) and "Copied" or "No clipboard"
+			task.delay(1.3, function()
+				if mine == token and copy.Parent then
+					copy.Text = "Copy"
+				end
+			end)
+		end))
+	end
+
+	return Base.Finish(container, el, opts, "Code")
+end
+end
+
 __modules["components/elements/Colorpicker"] = function(Import)
 local Utility = Import("core/Utility")
 local Icons = Import("core/Icons")
@@ -4851,6 +5096,99 @@ return function(container, opts)
 end
 end
 
+__modules["components/elements/Image"] = function(Import)
+local Utility = Import("core/Utility")
+local Compat = Import("core/Compat")
+local Base = Import("components/Base")
+
+local Create, Tween = Utility.Create, Utility.Tween
+
+local SCALE_TYPES = {
+	Crop = Enum.ScaleType.Crop,
+	Fit = Enum.ScaleType.Fit,
+	Stretch = Enum.ScaleType.Stretch,
+}
+
+-- opts: Image (asset id, rbxassetid://, or http(s) URL), Height (default 150), Scale ("Crop" | "Fit" | "Stretch"),
+--       Title, Desc. Roblox Store ids are Decals: they are converted automatically (see Compat.ResolveImage).
+-- el:SetImage(image) swaps the picture.
+return function(container, opts)
+	opts = opts or {}
+	local theme = container.Window.Theme
+	local el = Base.Card(container, opts)
+
+	local hasHeader = el.Top.Visible
+	local extra = Base.Extra(el, opts.Height or 150, hasHeader and 10 or 0)
+
+	local frame = Create("Frame", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.new(0, 0, 0),
+		ClipsDescendants = true,
+		Parent = extra,
+	})
+	Utility.Corner(frame, 8)
+	theme:Bind(frame, { BackgroundColor3 = "Field", BackgroundTransparency = "FieldAlpha" })
+
+	local image = Create("ImageLabel", {
+		Size = UDim2.fromScale(1, 1),
+		ScaleType = SCALE_TYPES[opts.Scale or "Crop"] or Enum.ScaleType.Crop,
+		ImageTransparency = 1,
+		Visible = false,
+		Parent = frame,
+	})
+
+	el.ImageLabel = image
+
+	local note = Create("TextLabel", {
+		Size = UDim2.fromScale(1, 1),
+		Text = "Loading image...",
+		Font = Utility.Fonts.Desc,
+		TextSize = 13,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		Parent = frame,
+	})
+	theme:Bind(note, { TextColor3 = "Muted" })
+
+	local version = 0
+
+	function el:SetImage(source)
+		version = version + 1
+		local mine = version
+		el.Value = source
+		image.Visible = false
+		note.Visible = true
+		note.Text = "Loading image..."
+		task.spawn(function()
+			local asset, reason = Compat.ResolveImage(source, container.Window.Folder)
+			if mine ~= version or not image.Parent then
+				return
+			end
+			if not asset then
+				note.Text = reason or "Image unavailable"
+				return
+			end
+			image.Image = asset
+			image.Visible = true
+			Tween(image, { ImageTransparency = 0 }, 0.5)
+			if Compat.ImageLoaded(image) == false and mine == version then
+				image.Visible = false
+				note.Text = "Roblox could not load this image"
+			else
+				note.Visible = false
+			end
+		end)
+	end
+
+	if opts.Image then
+		el:SetImage(opts.Image)
+	else
+		note.Text = "No image"
+	end
+
+	return Base.Finish(container, el, opts, "Image")
+end
+end
+
 __modules["components/elements/Input"] = function(Import)
 local Utility = Import("core/Utility")
 local Base = Import("components/Base")
@@ -5053,6 +5391,81 @@ return function(container, opts)
 	end))
 
 	return Base.Finish(container, el, opts, "Keybind")
+end
+end
+
+__modules["components/elements/ProgressBar"] = function(Import)
+local Utility = Import("core/Utility")
+local Base = Import("components/Base")
+
+local Create, Tween = Utility.Create, Utility.Tween
+
+-- opts: Title, Desc, Value (default 0), Min (0), Max (100), Suffix ("%")
+-- el:Set(value) animates the bar; el:SetText("custom") replaces the value text.
+return function(container, opts)
+	opts = opts or {}
+	local theme = container.Window.Theme
+	local min = opts.Min or 0
+	local max = opts.Max or 100
+	local suffix = opts.Suffix or "%"
+
+	local el = Base.Card(container, opts, 70, 24)
+	local extra = Base.Extra(el, 10)
+
+	local valueLabel = Create("TextLabel", {
+		Size = UDim2.fromScale(1, 1),
+		Font = Enum.Font.GothamBold,
+		TextSize = 13,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		Parent = el.Right,
+	})
+	theme:Bind(valueLabel, { TextColor3 = "Text" })
+
+	local rail = Create("Frame", {
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.fromScale(0, 0.5),
+		Size = UDim2.new(1, 0, 0, 8),
+		BackgroundColor3 = Color3.new(1, 1, 1),
+		ClipsDescendants = true,
+		Parent = extra,
+	})
+	Utility.Corner(rail, Utility.Pill)
+	theme:Bind(rail, { BackgroundColor3 = "Track", BackgroundTransparency = "TrackAlpha" })
+
+	local fill = Create("Frame", {
+		Size = UDim2.fromScale(0, 1),
+		BackgroundColor3 = Color3.new(1, 1, 1),
+		Parent = rail,
+	})
+	Utility.Corner(fill, Utility.Pill)
+	Base.Gradient(theme, fill, 0)
+
+	local customText
+
+	local function render(value, instant)
+		local alpha = max == min and 0 or Utility.Clamp((value - min) / (max - min), 0, 1)
+		valueLabel.Text = customText or (string.format("%d", math.floor(value + 0.5)) .. suffix)
+		if instant then
+			fill.Size = UDim2.fromScale(alpha, 1)
+		else
+			Tween(fill, { Size = UDim2.fromScale(alpha, 1) }, 0.35)
+		end
+	end
+
+	el.Value = Utility.Clamp(opts.Value or opts.Default or min, min, max)
+	render(el.Value, true)
+
+	function el:Set(value, instant)
+		self.Value = Utility.Clamp(tonumber(value) or min, min, max)
+		render(self.Value, instant == true)
+	end
+
+	function el:SetText(text)
+		customText = text
+		render(self.Value, true)
+	end
+
+	return Base.Finish(container, el, opts, "ProgressBar")
 end
 end
 
@@ -6265,8 +6678,9 @@ local function cycle(stops)
 end
 
 --// Presets ----------------------------------------------------------------------
--- Gear 5: black glass, Nika white -> sun gold -> drum orange -> Gomu red.
-local Gear5 = {
+-- BASE holds every token. It is also the "Normal" theme (orange / red / white / black / yellow);
+-- the other presets only list what they change.
+local BASE = {
 	Background = rgb(8, 8, 13),
 	BackgroundAlpha = 0.2,
 	Sidebar = rgb(0, 0, 0),
@@ -6298,32 +6712,70 @@ local Gear5 = {
 	},
 }
 
+local DEFAULT = "Gear 5"
+
+-- order shown in menus; themes added later come after these, alphabetically
+Theme.Order = { "Gear 5", "Gear 4", "Gear 3", "Normal" }
+
 Theme.Presets = {
-	Gear5 = Gear5,
-	Sunrise = {
-		Background = rgb(18, 9, 6),
-		BackgroundAlpha = 0.16,
-		Accent = rgb(255, 130, 40),
-		Gradient = { rgb(255, 214, 102), rgb(255, 150, 40), rgb(255, 86, 40), rgb(214, 32, 60) },
-	},
-	Joyboy = {
-		Background = rgb(16, 16, 24),
-		BackgroundAlpha = 0.26,
+	-- Gear 5: white is the identity (Nika's hair, clouds), a little cool silver and soft gold for depth.
+	["Gear 5"] = {
+		Background = rgb(12, 13, 21),
+		BackgroundAlpha = 0.22,
 		CardAlpha = 0.91,
-		CardHoverAlpha = 0.85,
-		Accent = rgb(255, 214, 120),
-		Gradient = { rgb(255, 255, 255), rgb(255, 238, 176), rgb(255, 200, 80), rgb(255, 156, 52) },
+		CardHoverAlpha = 0.84,
+		StrokeAlpha = 0.84,
+		TrackAlpha = 0.8,
+		Text = rgb(252, 252, 255),
+		SubText = rgb(200, 204, 220),
+		Muted = rgb(142, 146, 164),
+		OnAccent = rgb(16, 18, 30),
+		Accent = rgb(255, 255, 255),
+		Gradient = {
+			rgb(255, 255, 255),
+			rgb(224, 234, 255),
+			rgb(255, 247, 226),
+			rgb(255, 224, 160),
+		},
 	},
-	Gomu = {
-		Background = rgb(14, 6, 9),
+
+	-- Gear 4: black and red.
+	["Gear 4"] = {
+		Background = rgb(5, 5, 8),
+		BackgroundAlpha = 0.14,
+		SidebarAlpha = 0.6,
+		Popup = rgb(10, 8, 10),
+		OnAccent = rgb(255, 255, 255),
+		Accent = rgb(240, 46, 58),
+		Gradient = {
+			rgb(255, 116, 116),
+			rgb(244, 56, 68),
+			rgb(214, 32, 52),
+			rgb(180, 20, 44),
+		},
+	},
+
+	-- Gear 3: yellow into red.
+	["Gear 3"] = {
+		Background = rgb(20, 12, 4),
 		BackgroundAlpha = 0.18,
-		Accent = rgb(255, 80, 92),
-		Gradient = { rgb(255, 138, 112), rgb(255, 64, 76), rgb(214, 22, 56), rgb(255, 168, 64) },
+		Popup = rgb(22, 14, 6),
+		OnAccent = rgb(34, 14, 4),
+		Accent = rgb(255, 204, 52),
+		Gradient = {
+			rgb(255, 246, 160),
+			rgb(255, 208, 52),
+			rgb(255, 142, 34),
+			rgb(232, 52, 52),
+		},
 	},
+
+	-- Normal: orange, red, white, black and yellow (the BASE tokens).
+	["Normal"] = {},
 }
 
 local function resolve(name)
-	local tokens = table.clone(Gear5)
+	local tokens = table.clone(BASE)
 	local preset = Theme.Presets[name]
 	if preset then
 		for key, value in pairs(preset) do
@@ -6338,7 +6790,7 @@ end
 --// Instance ---------------------------------------------------------------------
 function Theme.new(name)
 	local self = setmetatable({}, Theme)
-	self.Name = Theme.Presets[name] and name or "Gear5"
+	self.Name = Theme.Presets[name] and name or DEFAULT
 	self.Tokens = resolve(self.Name)
 	self.Bindings = {}
 	self.Listeners = {}
@@ -6458,11 +6910,23 @@ function Theme.Preview(name)
 end
 
 function Theme:List()
-	local names = {}
+	local names, listed = {}, {}
+	for _, name in ipairs(Theme.Order) do
+		if Theme.Presets[name] then
+			table.insert(names, name)
+			listed[name] = true
+		end
+	end
+	local extra = {}
 	for name in pairs(Theme.Presets) do
+		if not listed[name] then
+			table.insert(extra, name)
+		end
+	end
+	table.sort(extra)
+	for _, name in ipairs(extra) do
 		table.insert(names, name)
 	end
-	table.sort(names)
 	return names
 end
 
@@ -6874,9 +7338,9 @@ if env.MugiwaraUI and type(env.MugiwaraUI.Destroy) == "function" then
 end
 
 local Library = {
-	Version = "0.4.0",
+	Version = "0.5.0",
 	Windows = {},
-	Theme = Theme.new("Gear5"),
+	Theme = Theme.new("Gear 5"),
 	Icons = Icons,
 	IconSets = IconSets,
 	Compat = Compat,

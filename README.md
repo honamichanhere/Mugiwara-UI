@@ -67,8 +67,8 @@ local Window = MugiwaraUI:CreateWindow({ Title = "Mugiwara Hub" })
 
 Run [`examples/dummy-flow.lua`](examples/dummy-flow.lua) to see it (any key is accepted there).
 
-**Key UI options:** `Title`, `Subtitle`, `Icon`, `Note` (`false` hides it), `Placeholder`, `Folder`, `Validate(key)` (**required**, must return `true` to accept), `Links` (`{ Title, Link, Icon, Callback }`; a `Link` is copied to the clipboard because executors cannot open a browser), `SaveKey` (default `true`: shows the "Remember key" switch), `Remember` (switch starts on), `OnSuccess(key)`, `OnClose()`.
-Methods: `Wait()`, `Submit(key)`, `Close()`, `ClearSavedKey()`, `SetStatus(text, kind)`; `KeyUI.Completed` is a signal. When "Remember key" was on and the saved key still validates, the Key UI is skipped entirely and `Wait()` returns immediately.
+**Key UI options:** `Title`, `Subtitle`, `Icon`, `Note` (`false` hides it), `Placeholder`, `Folder`, `Validate(key)` (**required**, must return `true` to accept), `Links` (`{ Title, Link, Icon, Callback }`; a `Link` is copied to the clipboard because executors cannot open a browser), `Heading`, `SaveKey` (default `true`: an accepted key is always saved for the next run; `false` never saves), `OnSuccess(key)`, `OnClose()`. The card is wide (21:9): identity on the left, the form on the right.
+Methods: `Wait()`, `Submit(key)`, `Close()`, `ClearSavedKey()`, `SetStatus(text, kind)`; `KeyUI.Completed` is a signal. When a saved key still validates, the Key UI is skipped entirely and `Wait()` returns immediately; an outdated saved key is deleted and the card shows up.
 
 **Loading UI options:** `Title`, `Owner`, `Version`, `Terminal` (terminal window title), `Prompt`, `Logs` (list of fake log lines), `MaxLogLines`, `InstantCover`.
 Methods: `SetStatus(text)`, `SetProgress(target, cap)`, `Log(text, "info"|"ok"|"warn"|"error")`, `Finish(message)`, `Destroy()`; `Loader.Finished` (signal, `:Wait()` / `:Connect()`) and `Loader.FinishEvent:Fire()`. The running loader is also available as `getgenv().MugiwaraLoader`.
@@ -79,7 +79,7 @@ Methods: `SetStatus(text)`, `SetProgress(target, cap)`, `Log(text, "info"|"ok"|"
 - Top bar with a **theme menu** and a **version badge**
 - Optional **wallpaper** for the whole window and **image cards** for single elements
 - Mobile friendly: scales down to fit small screens, touch dragging, no hover-only interactions
-- Tabs, **tab sections** (collapsible sidebar groups), collapsible sections nestable up to **2 levels**, 10 element types, notifications, dialogs
+- Tabs, **tab sections** (collapsible sidebar groups), collapsible sections nestable up to **2 levels**, 15 element types, row layout, notifications, dialogs
 - Color picker popup: color square, hue slider, opacity slider (0-100), HEX / RGB / HSV / HSL fields
 - 4 built-in themes with live switching, plus custom themes
 - Config saving (JSON) with flags, auto-load, and a ready-made config manager section
@@ -161,6 +161,12 @@ tab:Colorpicker({ Title, Default, Transparency, Callback(color, transparency) })
 tab:Label({ Title })
 tab:Paragraph({ Title, Desc })
 tab:Divider({ Title })                     -- Title optional
+tab:ProgressBar({ Title, Value, Min, Max, Suffix })   -- el:Set(value) animates; el:SetText("custom")
+tab:Code({ Title, Code, Language = "lua", Copy = true, Height = 220 })  -- Lua highlighted, copy button, scrolls sideways
+tab:Image({ Image, Height = 150, Scale = "Crop" | "Fit" | "Stretch", Title })  -- asset id / URL; el:SetImage(...)
+tab:Space(16)                              -- blank gap
+local row = tab:Group({ Gap = 8 })         -- children share the width side by side
+row:Button({ Title = "A" }); row:Button({ Title = "B" })
 tab:Section({ Title, Opened })             -- returns a container; section:SetOpen(bool)
 ```
 
@@ -197,7 +203,7 @@ Images can be an asset id, `rbxassetid://...`, or an http(s) URL. URLs are downl
 
 ### Themes
 
-Built in: `Gear5` (default), `Sunrise`, `Joyboy`, `Gomu`. Switch from the dot in the top bar or with `MugiwaraUI:SetTheme(name)`; gradients cross-fade.
+Built in: `Gear 5` (default, white), `Gear 4` (black and red), `Gear 3` (yellow and red) and `Normal` (orange, red, white, black, yellow). Switch from the dot in the top bar or with `MugiwaraUI:SetTheme(name)`; gradients cross-fade.
 
 ```lua
 MugiwaraUI:AddTheme("Mine", {
@@ -208,7 +214,7 @@ MugiwaraUI:AddTheme("Mine", {
 MugiwaraUI:SetTheme("Mine")
 ```
 
-Unspecified tokens fall back to `Gear5`. Tokens live in [`src/core/Theme.lua`](src/core/Theme.lua).
+Unspecified tokens fall back to the `Normal` palette. Tokens live in [`src/core/Theme.lua`](src/core/Theme.lua).
 
 ### Configs
 
@@ -231,8 +237,9 @@ Elements in WindUI's source tree and where they stand here:
 | --- | --- |
 | Button, Toggle, Slider, Dropdown, Input, Keybind, Colorpicker, Paragraph, Divider, Section | available |
 | Key system | available as a separate Key UI (not a `CreateWindow` option) |
-| Code, ProgressBar, Image, Video, Viewport | **missing** |
-| Group, HStack, VStack, Space (layout containers) | **missing** (elements stack vertically) |
+| Code, ProgressBar, Image, Space | available |
+| Group / HStack | `tab:Group()` (a row; equal widths). VStack is simply the default (elements stack vertically) |
+| Video, Viewport | **missing** |
 
 Other differences to check when porting: config saving goes through `Flag` + `Window:SaveConfig` / `ConfigSection` (not WindUI's config manager API), sections can be nested at most 2 levels, and the sidebar group is `Window:TabSection`.
 

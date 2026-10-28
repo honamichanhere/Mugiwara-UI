@@ -72,7 +72,7 @@ check(accepted == "good", "OnSuccess receives the key")
 drain(8)
 check(resolved and result == "good" and KeyUI.Destroyed, "Wait returns the accepted key and the card closes")
 check(#attempts == 2, "an accepted key locks the card")
-check(MOCK.files["FlowTest/key.txt"] == nil, "nothing is saved while Remember is off")
+check(MOCK.files["FlowTest/key.txt"] == "good", "an accepted key is always saved")
 
 -- Validate raising an error counts as invalid and never crashes
 local broken = UI:KeySystem({ Folder = "FlowBroken", Validate = function() error("boom") end })
@@ -85,12 +85,19 @@ WARNINGS = {}
 broken:Close()
 drain(4)
 
--- Remember: the second run skips the UI when the saved key is still valid
-local remembered = UI:KeySystem({ Folder = "FlowRemember", Remember = true, Validate = function() return true end })
+-- SaveKey = false never writes the key
+local unsaved = UI:KeySystem({ Folder = "FlowNoSave", SaveKey = false, Validate = function() return true end })
+unsaved.Box.Text = "tmp"
+unsaved:Submit()
+drain(8)
+check(MOCK.files["FlowNoSave/key.txt"] == nil, "SaveKey = false does not save the key")
+
+-- the second run skips the UI when the saved key is still valid
+local remembered = UI:KeySystem({ Folder = "FlowRemember", Validate = function() return true end })
 remembered.Box.Text = "saved-key"
 remembered:Submit()
 drain(8)
-check(MOCK.files["FlowRemember/key.txt"] == "saved-key", "Remember writes the key")
+check(MOCK.files["FlowRemember/key.txt"] == "saved-key", "the key is saved after success")
 
 local auto = UI:KeySystem({ Folder = "FlowRemember", Validate = function(key) return key == "saved-key" end })
 check(auto.Box == nil, "a valid saved key skips the key UI")

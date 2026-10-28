@@ -1,4 +1,7 @@
---// Key UI: a separate glass card that asks for a key and validates it with YOUR function.
+--// Key UI: a separate, wide (21:9) glass card that asks for a key and validates it with YOUR function.
+--// Left side: who you are (icon, title, note). Right side: key field, status, Verify, link buttons.
+--// An accepted key is always saved (when the executor has file access); next run it is validated again
+--// and, if it still passes, the Key UI never appears.
 --//
 --//   local KeyUI = MugiwaraUI:KeySystem({
 --//       Title = "Mugiwara Hub",
@@ -16,8 +19,9 @@ local Shell = Import("components/Shell")
 
 local Create, Tween = Utility.Create, Utility.Tween
 
-local WIDTH = 420
-local PAD = 24
+-- 21:9
+local WIDTH, HEIGHT = 700, 300
+local SIDE = 250
 
 local function trim(text)
 	text = string.gsub(tostring(text or ""), "^%s+", "")
@@ -25,9 +29,10 @@ local function trim(text)
 	return text
 end
 
--- opts: Title, Subtitle, Icon, Note (false hides it), Placeholder, Folder, SaveKey (default true: offers
---       the "Remember key" switch), Remember (switch starts on), Links = { { Title, Link, Icon, Callback } },
---       Validate(key) -> valid, message  (required, may yield), OnSuccess(key), OnClose()
+-- opts: Title, Subtitle, Icon, Note (false hides it), Heading, Placeholder, Folder,
+--       SaveKey (default true; false = never save the key), Links = { { Title, Link, Icon, Callback } },
+--       Validate(key) -> true | false, message  (required, may yield; only `true` accepts),
+--       OnSuccess(key), OnClose()
 return function(library, opts)
 	opts = opts or {}
 	if type(opts.Validate) ~= "function" then
@@ -53,7 +58,6 @@ return function(library, opts)
 
 	local shell, status, box, submitButton, submitLabel
 	local busy, finished = false, false
-	local remember = opts.Remember == true
 
 	--// validation ---------------------------------------------------------------------
 	-- returns valid (bool), message (string|nil); errors inside Validate count as invalid
@@ -150,35 +154,29 @@ return function(library, opts)
 			local valid, message = runValidate(key)
 			if not valid then
 				busy = false -- an accepted key keeps the card locked while it plays the success animation
-			end
-
-			if valid then
-				setStatus(message or "Key accepted.", "success")
-				if submitLabel then
-					submitLabel.Text = "Access granted"
-				end
-				if submitButton then
-					submitButton.BackgroundColor3 = theme.Tokens.Success
-				end
-				if canSave then
-					if remember then
-						Compat.EnsureFolder(folder)
-						Compat.WriteFile(keyPath, key)
-					else
-						Compat.DeleteFile(keyPath)
-					end
-				end
-				Utility.SafeCall(opts.OnSuccess, key)
-				task.delay(0.9, function()
-					finish(key)
-				end)
-			else
 				setStatus(message or "Invalid key.", "error")
 				if submitLabel then
 					submitLabel.Text = "Verify Key"
 				end
 				shake()
+				return
 			end
+
+			setStatus(message or "Key accepted.", "success")
+			if submitLabel then
+				submitLabel.Text = "Access granted"
+			end
+			if submitButton then
+				submitButton.BackgroundColor3 = theme.Tokens.Success
+			end
+			if canSave then
+				Compat.EnsureFolder(folder)
+				Compat.WriteFile(keyPath, key)
+			end
+			Utility.SafeCall(opts.OnSuccess, key)
+			task.delay(0.9, function()
+				finish(key)
+			end)
 		end)
 	end
 
@@ -187,55 +185,54 @@ return function(library, opts)
 	end
 
 	local function build()
-		local hasNote = opts.Note ~= false
-		local hasLinks = #links > 0
-		local y = 20
-
-		-- vertical layout: positions are computed first so the card gets exactly the height it needs
-		local headerY = y
-		y = y + 64
-		local noteY = y
-		if hasNote then
-			y = y + 44
-		end
-		local fieldY = y
-		y = y + 46 + 6
-		local statusY = y
-		y = y + 20 + 6
-		local rememberY = y
-		if canSave then
-			y = y + 26 + 10
-		end
-		local verifyY = y
-		y = y + 46 + 10
-		local linksY = y
-		if hasLinks then
-			y = y + 34
-		end
-		local height = y + (hasLinks and 24 or 14)
-
 		shell = Shell.new(library, {
 			Name = "Key",
-			Size = Vector2.new(WIDTH, height),
+			Size = Vector2.new(WIDTH, HEIGHT),
 			Backdrop = 0.45,
-			MinScale = 0.55,
+			-- covers the whole screen including the top bar strip (the backdrop used to stop below it)
+			IgnoreGuiInset = true,
+			MinScale = 0.5,
 		})
 		local maid = shell.Maid
 		local card = shell.Card
 
-		--// header
-		local brand = Create("Frame", {
-			Position = UDim2.fromOffset(PAD, headerY),
-			Size = UDim2.fromOffset(44, 44),
-			BackgroundColor3 = Color3.new(1, 1, 1),
+		--// left panel: identity ---------------------------------------------------------
+		local side = Create("Frame", {
+			Name = "Side",
+			Size = UDim2.new(0, SIDE, 1, 0),
+			BackgroundColor3 = Color3.new(0, 0, 0),
 			Parent = card,
 		})
-		Utility.Corner(brand, 12)
+		theme:Bind(side, { BackgroundColor3 = "Sidebar", BackgroundTransparency = "SidebarAlpha" })
+		local sideEdge = Create("Frame", {
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.fromScale(1, 0),
+			Size = UDim2.new(0, 1, 1, 0),
+			BackgroundColor3 = Color3.new(1, 1, 1),
+			Parent = side,
+		})
+		theme:Bind(sideEdge, { BackgroundColor3 = "Stroke", BackgroundTransparency = "StrokeAlpha" })
+
+		local identity = Create("Frame", {
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			Parent = side,
+		})
+		Utility.Padding(identity, 26, 26, 28, 24)
+		Utility.List(identity, 10, Enum.FillDirection.Vertical, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center)
+
+		local brand = Create("Frame", {
+			Size = UDim2.fromOffset(64, 64),
+			BackgroundColor3 = Color3.new(1, 1, 1),
+			LayoutOrder = 1,
+			Parent = identity,
+		})
+		Utility.Corner(brand, 16)
 		Base.Gradient(theme, brand, 45)
 		local slot = Create("Frame", {
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			Position = UDim2.fromScale(0.5, 0.5),
-			Size = UDim2.fromOffset(24, 24),
+			Size = UDim2.fromOffset(34, 34),
 			BackgroundTransparency = 1,
 			Parent = brand,
 		})
@@ -251,7 +248,7 @@ return function(library, opts)
 				Size = UDim2.fromScale(1, 1),
 				Text = string.upper(string.sub(opts.Title or "M", 1, 1)),
 				Font = Enum.Font.GothamBlack,
-				TextSize = 22,
+				TextSize = 30,
 				TextXAlignment = Enum.TextXAlignment.Center,
 				Parent = brand,
 			})
@@ -259,66 +256,66 @@ return function(library, opts)
 		end
 
 		local title = Create("TextLabel", {
-			Position = UDim2.fromOffset(PAD + 56, headerY + 3),
-			Size = UDim2.new(1, -(PAD + 56 + 56), 0, 24),
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
 			Text = opts.Title or "Mugiwara Hub",
 			Font = Utility.Fonts.Title,
-			TextSize = 19,
-			TextTruncate = Enum.TextTruncate.AtEnd,
-			Parent = card,
+			TextSize = 23,
+			TextWrapped = true,
+			LayoutOrder = 2,
+			Parent = identity,
 		})
 		Base.Gradient(theme, title, 0)
 
 		local subtitle = Create("TextLabel", {
-			Position = UDim2.fromOffset(PAD + 56, headerY + 27),
-			Size = UDim2.new(1, -(PAD + 56 + 56), 0, 16),
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
 			Text = opts.Subtitle or "Key System",
-			Font = Utility.Fonts.Desc,
-			TextSize = 13,
-			TextTruncate = Enum.TextTruncate.AtEnd,
-			Parent = card,
+			Font = Utility.Fonts.Label,
+			TextSize = 14,
+			TextWrapped = true,
+			LayoutOrder = 3,
+			Parent = identity,
 		})
-		theme:Bind(subtitle, { TextColor3 = "SubText" })
+		theme:Bind(subtitle, { TextColor3 = "Text" })
 
-		local closeButton = Create("TextButton", {
-			AnchorPoint = Vector2.new(1, 0),
-			Position = UDim2.new(1, -14, 0, headerY - 4),
-			Size = UDim2.fromOffset(34, 34),
-			BackgroundColor3 = Color3.new(1, 1, 1),
-			BackgroundTransparency = 1,
-			Parent = card,
-		})
-		Utility.Corner(closeButton, 9)
-		local closeGlyph = Icons.Bind(theme, Icons.Close(closeButton, 20, 2), "SubText")
-		closeButton.MouseEnter:Connect(function()
-			Tween(closeButton, { BackgroundTransparency = 0.88 }, 0.15)
-			Icons.SetColor(closeGlyph, theme.Tokens.Danger)
-		end)
-		closeButton.MouseLeave:Connect(function()
-			Tween(closeButton, { BackgroundTransparency = 1 }, 0.2)
-			Icons.SetColor(closeGlyph, theme.Tokens.SubText)
-		end)
-		maid:Give(closeButton.MouseButton1Click:Connect(function()
-			KeyUI:Close()
-		end))
-
-		--// note
-		if hasNote then
+		if opts.Note ~= false then
 			local note = Create("TextLabel", {
-				Position = UDim2.fromOffset(PAD, noteY),
-				Size = UDim2.new(1, -PAD * 2, 0, 36),
+				Size = UDim2.new(1, 0, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
 				Text = opts.Note or "Enter your key to continue.",
 				Font = Utility.Fonts.Desc,
-				TextSize = 14,
+				TextSize = 13,
 				TextWrapped = true,
-				TextYAlignment = Enum.TextYAlignment.Top,
-				Parent = card,
+				LayoutOrder = 4,
+				Parent = identity,
 			})
 			theme:Bind(note, { TextColor3 = "SubText" })
 		end
 
-		--// key field
-		local field, fieldStroke = Base.Field(theme, card, UDim2.new(1, -PAD * 2, 0, 46), UDim2.fromOffset(PAD, fieldY))
+		--// right panel: the form -----------------------------------------------------------
+		local form = Create("Frame", {
+			Name = "Form",
+			Position = UDim2.fromOffset(SIDE, 0),
+			Size = UDim2.new(1, -SIDE, 1, 0),
+			BackgroundTransparency = 1,
+			Parent = card,
+		})
+		Utility.Padding(form, 24, 24, 34, 34)
+		Utility.List(form, 12, Enum.FillDirection.Vertical, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center)
+
+		local heading = Create("TextLabel", {
+			Size = UDim2.new(1, 0, 0, 26),
+			Text = opts.Heading or "Enter your key",
+			Font = Utility.Fonts.Title,
+			TextSize = 20,
+			LayoutOrder = 1,
+			Parent = form,
+		})
+		theme:Bind(heading, { TextColor3 = "Text" })
+
+		local field, fieldStroke = Base.Field(theme, form, UDim2.new(1, 0, 0, 48))
+		field.LayoutOrder = 2
 		local keyIconSlot = Create("Frame", {
 			AnchorPoint = Vector2.new(0, 0.5),
 			Position = UDim2.new(0, 14, 0.5, 0),
@@ -362,7 +359,7 @@ return function(library, opts)
 			local paste = Create("TextButton", {
 				AnchorPoint = Vector2.new(1, 0.5),
 				Position = UDim2.new(1, -8, 0.5, 0),
-				Size = UDim2.fromOffset(52, 30),
+				Size = UDim2.fromOffset(52, 32),
 				BackgroundColor3 = Color3.new(1, 1, 1),
 				Text = "Paste",
 				Font = Enum.Font.GothamBold,
@@ -380,75 +377,23 @@ return function(library, opts)
 			end))
 		end
 
-		--// status line
 		status = Create("TextLabel", {
-			Position = UDim2.fromOffset(PAD + 2, statusY),
-			Size = UDim2.new(1, -(PAD + 2) * 2, 0, 20),
+			Size = UDim2.new(1, 0, 0, 18),
 			Text = "",
 			Font = Utility.Fonts.Label,
 			TextSize = 13,
 			TextTruncate = Enum.TextTruncate.AtEnd,
-			Parent = card,
+			LayoutOrder = 3,
+			Parent = form,
 		})
 		KeyUI.Status = status
 
-		--// remember switch
-		if canSave then
-			local row = Create("TextButton", {
-				Position = UDim2.fromOffset(PAD, rememberY),
-				Size = UDim2.new(1, -PAD * 2, 0, 26),
-				Parent = card,
-			})
-			local rowLabel = Create("TextLabel", {
-				Position = UDim2.fromOffset(2, 0),
-				Size = UDim2.new(1, -60, 1, 0),
-				Text = "Remember key on this device",
-				Font = Utility.Fonts.Body,
-				TextSize = 14,
-				Parent = row,
-			})
-			theme:Bind(rowLabel, { TextColor3 = "Text" })
-
-			local track = Create("Frame", {
-				AnchorPoint = Vector2.new(1, 0.5),
-				Position = UDim2.new(1, 0, 0.5, 0),
-				Size = UDim2.fromOffset(40, 22),
-				BackgroundColor3 = Color3.new(1, 1, 1),
-				Parent = row,
-			})
-			Utility.Corner(track, Utility.Pill)
-			theme:Bind(track, { BackgroundColor3 = "Track", BackgroundTransparency = "TrackAlpha" })
-			local fill = Create("Frame", {
-				Size = UDim2.fromScale(1, 1),
-				BackgroundColor3 = Color3.new(1, 1, 1),
-				BackgroundTransparency = remember and 0 or 1,
-				Parent = track,
-			})
-			Utility.Corner(fill, Utility.Pill)
-			Base.Gradient(theme, fill, 0)
-			local knob = Create("Frame", {
-				AnchorPoint = Vector2.new(0, 0.5),
-				Position = UDim2.new(0, remember and 21 or 3, 0.5, 0),
-				Size = UDim2.fromOffset(16, 16),
-				BackgroundColor3 = Color3.new(1, 1, 1),
-				Parent = track,
-			})
-			Utility.Corner(knob, Utility.Pill)
-
-			maid:Give(row.MouseButton1Click:Connect(function()
-				remember = not remember
-				Tween(fill, { BackgroundTransparency = remember and 0 or 1 }, 0.2)
-				Tween(knob, { Position = UDim2.new(0, remember and 21 or 3, 0.5, 0) }, 0.22)
-			end))
-		end
-
-		--// verify button
 		-- centered anchor so the press animation shrinks toward the middle
 		local verifyHolder = Create("Frame", {
-			Position = UDim2.fromOffset(PAD, verifyY),
-			Size = UDim2.new(1, -PAD * 2, 0, 46),
+			Size = UDim2.new(1, 0, 0, 48),
 			BackgroundTransparency = 1,
-			Parent = card,
+			LayoutOrder = 4,
+			Parent = form,
 		})
 		submitButton = Create("TextButton", {
 			AnchorPoint = Vector2.new(0.5, 0.5),
@@ -479,14 +424,14 @@ return function(library, opts)
 			submit()
 		end))
 
-		--// links
+		--// links ------------------------------------------------------------------------------
 		KeyUI.LinkButtons = {}
-		if hasLinks then
+		if #links > 0 then
 			local row = Create("Frame", {
-				Position = UDim2.fromOffset(PAD, linksY),
-				Size = UDim2.new(1, -PAD * 2, 0, 34),
+				Size = UDim2.new(1, 0, 0, 36),
 				BackgroundTransparency = 1,
-				Parent = card,
+				LayoutOrder = 5,
+				Parent = form,
 			})
 			local gap = 8
 			local count = #links
@@ -548,6 +493,30 @@ return function(library, opts)
 				end))
 			end
 		end
+
+		--// close ---------------------------------------------------------------------------------
+		local closeButton = Create("TextButton", {
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.new(1, -14, 0, 14),
+			Size = UDim2.fromOffset(34, 34),
+			BackgroundColor3 = Color3.new(1, 1, 1),
+			BackgroundTransparency = 1,
+			ZIndex = 5,
+			Parent = card,
+		})
+		Utility.Corner(closeButton, 9)
+		local closeGlyph = Icons.Bind(theme, Icons.Close(closeButton, 20, 2), "SubText")
+		closeButton.MouseEnter:Connect(function()
+			Tween(closeButton, { BackgroundTransparency = 0.88 }, 0.15)
+			Icons.SetColor(closeGlyph, theme.Tokens.Danger)
+		end)
+		closeButton.MouseLeave:Connect(function()
+			Tween(closeButton, { BackgroundTransparency = 1 }, 0.2)
+			Icons.SetColor(closeGlyph, theme.Tokens.SubText)
+		end)
+		maid:Give(closeButton.MouseButton1Click:Connect(function()
+			KeyUI:Close()
+		end))
 
 		shell:Show()
 		if not Compat.IsMobile then

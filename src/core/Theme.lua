@@ -31,8 +31,9 @@ local function cycle(stops)
 end
 
 --// Presets ----------------------------------------------------------------------
--- Gear 5: black glass, Nika white -> sun gold -> drum orange -> Gomu red.
-local Gear5 = {
+-- BASE holds every token. It is also the "Normal" theme (orange / red / white / black / yellow);
+-- the other presets only list what they change.
+local BASE = {
 	Background = rgb(8, 8, 13),
 	BackgroundAlpha = 0.2,
 	Sidebar = rgb(0, 0, 0),
@@ -64,32 +65,70 @@ local Gear5 = {
 	},
 }
 
+local DEFAULT = "Gear 5"
+
+-- order shown in menus; themes added later come after these, alphabetically
+Theme.Order = { "Gear 5", "Gear 4", "Gear 3", "Normal" }
+
 Theme.Presets = {
-	Gear5 = Gear5,
-	Sunrise = {
-		Background = rgb(18, 9, 6),
-		BackgroundAlpha = 0.16,
-		Accent = rgb(255, 130, 40),
-		Gradient = { rgb(255, 214, 102), rgb(255, 150, 40), rgb(255, 86, 40), rgb(214, 32, 60) },
-	},
-	Joyboy = {
-		Background = rgb(16, 16, 24),
-		BackgroundAlpha = 0.26,
+	-- Gear 5: white is the identity (Nika's hair, clouds), a little cool silver and soft gold for depth.
+	["Gear 5"] = {
+		Background = rgb(12, 13, 21),
+		BackgroundAlpha = 0.22,
 		CardAlpha = 0.91,
-		CardHoverAlpha = 0.85,
-		Accent = rgb(255, 214, 120),
-		Gradient = { rgb(255, 255, 255), rgb(255, 238, 176), rgb(255, 200, 80), rgb(255, 156, 52) },
+		CardHoverAlpha = 0.84,
+		StrokeAlpha = 0.84,
+		TrackAlpha = 0.8,
+		Text = rgb(252, 252, 255),
+		SubText = rgb(200, 204, 220),
+		Muted = rgb(142, 146, 164),
+		OnAccent = rgb(16, 18, 30),
+		Accent = rgb(255, 255, 255),
+		Gradient = {
+			rgb(255, 255, 255),
+			rgb(224, 234, 255),
+			rgb(255, 247, 226),
+			rgb(255, 224, 160),
+		},
 	},
-	Gomu = {
-		Background = rgb(14, 6, 9),
+
+	-- Gear 4: black and red.
+	["Gear 4"] = {
+		Background = rgb(5, 5, 8),
+		BackgroundAlpha = 0.14,
+		SidebarAlpha = 0.6,
+		Popup = rgb(10, 8, 10),
+		OnAccent = rgb(255, 255, 255),
+		Accent = rgb(240, 46, 58),
+		Gradient = {
+			rgb(255, 116, 116),
+			rgb(244, 56, 68),
+			rgb(214, 32, 52),
+			rgb(180, 20, 44),
+		},
+	},
+
+	-- Gear 3: yellow into red.
+	["Gear 3"] = {
+		Background = rgb(20, 12, 4),
 		BackgroundAlpha = 0.18,
-		Accent = rgb(255, 80, 92),
-		Gradient = { rgb(255, 138, 112), rgb(255, 64, 76), rgb(214, 22, 56), rgb(255, 168, 64) },
+		Popup = rgb(22, 14, 6),
+		OnAccent = rgb(34, 14, 4),
+		Accent = rgb(255, 204, 52),
+		Gradient = {
+			rgb(255, 246, 160),
+			rgb(255, 208, 52),
+			rgb(255, 142, 34),
+			rgb(232, 52, 52),
+		},
 	},
+
+	-- Normal: orange, red, white, black and yellow (the BASE tokens).
+	["Normal"] = {},
 }
 
 local function resolve(name)
-	local tokens = table.clone(Gear5)
+	local tokens = table.clone(BASE)
 	local preset = Theme.Presets[name]
 	if preset then
 		for key, value in pairs(preset) do
@@ -104,7 +143,7 @@ end
 --// Instance ---------------------------------------------------------------------
 function Theme.new(name)
 	local self = setmetatable({}, Theme)
-	self.Name = Theme.Presets[name] and name or "Gear5"
+	self.Name = Theme.Presets[name] and name or DEFAULT
 	self.Tokens = resolve(self.Name)
 	self.Bindings = {}
 	self.Listeners = {}
@@ -224,11 +263,23 @@ function Theme.Preview(name)
 end
 
 function Theme:List()
-	local names = {}
+	local names, listed = {}, {}
+	for _, name in ipairs(Theme.Order) do
+		if Theme.Presets[name] then
+			table.insert(names, name)
+			listed[name] = true
+		end
+	end
+	local extra = {}
 	for name in pairs(Theme.Presets) do
+		if not listed[name] then
+			table.insert(extra, name)
+		end
+	end
+	table.sort(extra)
+	for _, name in ipairs(extra) do
 		table.insert(names, name)
 	end
-	table.sort(names)
 	return names
 end
 

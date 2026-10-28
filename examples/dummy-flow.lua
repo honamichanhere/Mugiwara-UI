@@ -18,6 +18,10 @@ end
 
 local MugiwaraUI = loadLibrary()
 
+-- The Key UI always saves an accepted key (the next run then skips the Key UI). While testing the UI we
+-- do not want that, so saving is off here. Set it to true to see the "saved key" behavior.
+local SAVE_KEY = false
+
 local HUB = {
 	Name = "Mugiwara Dummy",
 	Owner = "Honami",
@@ -32,6 +36,7 @@ local KeyUI = MugiwaraUI:KeySystem({
 	Icon = "lucide:key-round",
 	Note = "Demo: any key is accepted. Type anything and press Verify.",
 	Folder = HUB.Folder,
+	SaveKey = SAVE_KEY,
 	Links = {
 		{ Title = "Get Key", Icon = "lucide:external-link", Link = "https://example.com/get-key" },
 		{ Title = "Discord", Icon = "lucide:message-circle", Link = "https://discord.gg/example" },
@@ -98,7 +103,7 @@ Home:Label({ Title = "Executor: " .. tostring(MugiwaraUI.Compat.Executor), Icon 
 
 Home:Button({
 	Title = "Forget saved key",
-	Desc = "Turn on 'Remember key' in the Key UI, run again, and the key UI is skipped. This clears it.",
+	Desc = "With SAVE_KEY = true the key is saved and the Key UI is skipped next run. This clears it.",
 	Icon = "lucide:trash-2",
 	Callback = function()
 		KeyUI:ClearSavedKey()
