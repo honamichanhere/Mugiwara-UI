@@ -11,7 +11,7 @@ A glass + neon UI library for Roblox script hubs, themed after Luffy's **Gear 5*
 Load a **pinned version** (recommended). A tag never changes, so a later push cannot break the hubs that use it:
 
 ```lua
-local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.8.0/dist/main.lua"))()
+local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.9.0/dist/main.lua"))()
 ```
 
 `.../main/dist/main.lua` always serves the newest build (GitHub caches it for about 5 minutes). Available tags are listed in the
@@ -20,7 +20,7 @@ local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/ho
 ## Quick start
 
 ```lua
-local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.8.0/dist/main.lua"))()
+local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.9.0/dist/main.lua"))()
 
 local Window = MugiwaraUI:CreateWindow({
     Title = "Mugiwara Hub",
@@ -52,7 +52,7 @@ To test local changes without pushing: run `npm run build`, copy `dist/main.lua`
 Three pieces of the same set, all drawn in the active theme:
 
 ```lua
-local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.8.0/dist/main.lua"))()
+local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.9.0/dist/main.lua"))()
 
 -- 1) Key UI: a separate card. Validate is YOUR check (HTTP request, hash...), it may yield.
 local KeyUI = MugiwaraUI:KeySystem({
@@ -178,6 +178,7 @@ tab:Button({ Title, Desc, Callback })
 tab:Toggle({ Title, Value, Callback(state) })
 tab:Slider({ Title, Value = { Min, Max, Default }, Step, Suffix, Callback(value) })
 tab:Dropdown({ Title, Values, Value, Multi, AllowNone, Searchable, Callback(value) })  -- el:Refresh(values, keepSelection)
+tab:GridDropdown({ Title, Values, Value, Multi, Columns = 3, CellHeight = 104, MaxHeight = 260, Titles, Callback(value) })  -- pictures in a grid
 --   Values: "text" or { Title, Desc, Icon, IconColor } per item (title only, title + icon, or everything); Get() returns the Title
 tab:Input({ Title, Value, Placeholder, Numeric, Type = "Input" | "Textarea", Callback(text) })
 tab:Keybind({ Title, Value = "K", Callback(), OnChange(key) })
@@ -194,6 +195,29 @@ local row = tab:Group({ Gap = 8 })         -- children share the width side by s
 row:Button({ Title = "A" }); row:Button({ Title = "B" })
 tab:Section({ Title, Opened })             -- returns a container; section:SetOpen(bool)
 ```
+
+### Grid dropdown (pictures)
+
+A searchable picker that shows its options as a grid of pictures. Items are strings or `{ Title, Image, Icon, IconColor }`; `Get()` and the callback return the `Title`.
+
+```lua
+local skins = Tab:GridDropdown({
+    Title = "Skin",
+    Columns = 3,          -- how many pictures per row
+    CellHeight = 104,     -- height of one cell in pixels (width follows Columns)
+    MaxHeight = 260,      -- the grid scrolls beyond this
+    Values = {
+        { Title = "Gear 5", Image = "132136264088686" },        -- asset id, Store id (Decal), rbxassetid:// or http(s) URL
+        { Title = "Sword", Icon = "lucide:sword", IconColor = "Success" },  -- icon-set icon instead of a picture
+        "Plain",                                                 -- just a letter tile
+    },
+    Value = "Gear 5",
+    Callback = function(title) print(title) end,
+})
+skins:SetGrid({ Columns = 4, CellHeight = 90 })   -- change the grid later
+```
+
+Other options: `Multi`, `AllowNone`, `Searchable` (default on), `Titles = false` (pictures only), `Scale` (`"Crop"` / `"Fit"` / `"Stretch"`), `Placeholder`, `Flag` (saved in configs). Pictures load in the background and are remembered, so searching does not reload them.
 
 ### Icons
 

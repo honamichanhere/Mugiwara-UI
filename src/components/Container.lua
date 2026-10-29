@@ -8,6 +8,7 @@ local Button = Import("components/elements/Button")
 local Toggle = Import("components/elements/Toggle")
 local Slider = Import("components/elements/Slider")
 local Dropdown = Import("components/elements/Dropdown")
+local GridDropdown = Import("components/elements/GridDropdown")
 local Input = Import("components/elements/Input")
 local Keybind = Import("components/elements/Keybind")
 local Colorpicker = Import("components/elements/Colorpicker")
@@ -55,6 +56,11 @@ end
 
 function Container:Dropdown(opts)
 	return Dropdown(self, opts)
+end
+
+-- Searchable picker that shows pictures in a grid (Columns, CellHeight, MaxHeight).
+function Container:GridDropdown(opts)
+	return GridDropdown(self, opts)
 end
 
 function Container:Input(opts)

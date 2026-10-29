@@ -182,6 +182,37 @@ track(Elements:Dropdown({
 	end,
 }))
 
+local skinPicker = track(Elements:GridDropdown({
+	Title = "Skin (grid with pictures)",
+	Desc = "Searchable. Columns, CellHeight and MaxHeight set the grid; Image takes an asset id, Store id or URL.",
+	Flag = "skin",
+	Columns = 3,
+	CellHeight = 104,
+	Values = {
+		{ Title = "Gear 5", Image = "132136264088686" },
+		{ Title = "Gear 4", Image = "97664760089542" },
+		{ Title = "Gear 3", Image = "72569835503667" },
+		{ Title = "Normal", Image = "95252648321318" },
+		{ Title = "Sword", Icon = "lucide:sword", IconColor = Color3.fromRGB(255, 170, 40) },
+		{ Title = "Shield", Icon = "lucide:shield", IconColor = "Success" },
+		"No picture",
+	},
+	Value = "Gear 5",
+	Callback = function(value)
+		act("skin " .. tostring(value))
+	end,
+}))
+
+Elements:Slider({
+	Title = "Skin grid columns",
+	Desc = "el:SetGrid({ Columns = n }) re-lays the grid live.",
+	Value = { Min = 1, Max = 5, Default = 3 },
+	Step = 1,
+	Callback = function(value)
+		skinPicker:SetGrid({ Columns = value })
+	end,
+})
+
 local islands = Elements:Dropdown({
 	Title = "Island (searchable)",
 	Desc = "More than 8 values turns search on automatically.",

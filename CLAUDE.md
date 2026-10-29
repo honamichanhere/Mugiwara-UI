@@ -36,7 +36,7 @@ src/components/Window.lua    window chrome, topbar, tabs, config section, theme 
 src/components/Container.lua element methods shared by Tab / Section / Group; Section nesting limit = 2
 src/components/Base.lua      the glass card every element is built on (Card, Extra, Expandable, Field, Gradient)
 src/components/elements/     Button Toggle Slider Dropdown Input Keybind Colorpicker Text(Label/Paragraph/Divider)
-                             ProgressBar Code Image Chat
+                             ProgressBar Code Image GridDropdown Chat
 src/components/              Popup, Dialog, Notification, Tab, TabSection, Shell + Neon (shared look),
                              KeySystem, Loading, ChatTransports
 build/                       build.mjs (bundler), check.mjs (syntax + undefined globals)

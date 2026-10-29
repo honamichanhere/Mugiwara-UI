@@ -323,6 +323,83 @@ UI:SetTheme("Gear 4")
 check(rich.Rows()[1].Stroke.Color == UI.Theme.Tokens.Stroke, "row borders follow the theme")
 UI:SetTheme("Gear 5")
 
+--// grid dropdown (pictures in a grid)
+MOCK_ASSET_TYPES[600] = 13 -- a Decal: converted to its image like the wallpaper
+local gridPicked
+local gridDrop = Main:GridDropdown({
+	Title = "Skin",
+	Columns = 4,
+	CellHeight = 90,
+	Values = {
+		"Plain",
+		{ Title = "Photo", Image = "rbxassetid://5" },
+		{ Title = "Store", Image = "600" },
+		{ Title = "Blade", Icon = "lucide:sword", IconColor = red },
+		{ Title = "Wide", Image = "rbxassetid://6" },
+	},
+	Value = "Photo",
+	Callback = function(value) gridPicked = value end,
+})
+local gridCells = gridDrop.Cells()
+check(#gridCells == 5, "every item gets a cell")
+local cellSize = gridDrop.GridLayout.CellSize
+check(math.abs(cellSize.X.Scale - 0.25) < 1e-9 and cellSize.X.Offset == -6 and cellSize.Y.Offset == 90, "cell size comes from Columns and CellHeight")
+check(gridDrop.GridFrame.Size.Y.Offset == 2 * 90 + 8 + 6, "the grid is as tall as its rows")
+check(gridCells[2].Frame:FindFirstChild("Picture", true).Image == "rbxassetid://5", "Image shows in the cell")
+check(gridCells[3].Frame:FindFirstChild("Picture", true).Image == "http://www.roblox.com/asset/?id=999", "Store (Decal) ids are converted")
+check(gridCells[4].Frame:FindFirstChild("Icon", true).Image == "rbxassetid://333" and gridCells[4].Frame:FindFirstChild("Icon", true).ImageColor3 == red, "Icon items draw a tinted icon")
+check(gridCells[1].Frame:FindFirstChild("Picture", true) == nil, "a plain string cell has no picture")
+check(gridCells[2].Badge.Visible and not gridCells[1].Badge.Visible, "the selected cell shows its badge")
+check(gridCells[2].Stroke.Color == UI.Theme.Tokens.Accent, "the selected cell's border uses the accent")
+check(gridDrop.Right:FindFirstChild("Picture", true) ~= nil, "the chosen picture shows in the closed button")
+gridCells[1].Frame.MouseButton1Click:Fire()
+check(gridPicked == "Plain" and gridDrop:Get() == "Plain", "clicking a cell chooses it")
+check(gridDrop.Right:FindFirstChild("Picture", true) == nil, "no picture in the closed button for a plain item")
+gridDrop:Set("Blade", true)
+check(gridDrop:Get() == "Blade" and gridPicked == "Plain", "silent Set does not call back")
+
+gridDrop:SetGrid({ Columns = 2 })
+cellSize = gridDrop.GridLayout.CellSize
+check(math.abs(cellSize.X.Scale - 0.5) < 1e-9 and cellSize.X.Offset == -4 and cellSize.Y.Offset == 90, "SetGrid changes the columns")
+check(gridDrop.GridFrame.Size.Y.Offset == math.min(3 * 90 + 2 * 8 + 6, 260), "and the height follows")
+gridDrop:SetGrid({ CellHeight = 120, MaxHeight = 200 })
+check(gridDrop.GridFrame.Size.Y.Offset == 200, "MaxHeight caps the grid (it scrolls)")
+
+local gridBox
+for _, descendant in ipairs(gridDrop.Frame:GetDescendants()) do
+	if descendant:IsA("TextBox") then
+		gridBox = descendant
+	end
+end
+check(gridBox ~= nil, "the grid dropdown is searchable by default")
+gridBox.Text = "bla"
+check(#gridDrop.Cells() == 1 and gridDrop.Cells()[1].Name == "Blade", "search filters the grid")
+gridBox.Text = ""
+check(#gridDrop.Cells() == 5, "clearing the search brings everything back")
+
+local multiGrid = Main:GridDropdown({
+	Title = "Multi", Multi = true, Searchable = false, Titles = false,
+	Values = { { Title = "Alpha", Image = "rbxassetid://5" }, { Title = "Beta", Image = "rbxassetid://6" } },
+	Value = { "Alpha" },
+})
+multiGrid.Cells()[2].Frame.MouseButton1Click:Fire()
+check(#multiGrid:Get() == 2, "multi select toggles cells")
+local hasTitle = false
+for _, descendant in ipairs(multiGrid.GridFrame:GetDescendants()) do
+	hasTitle = hasTitle or (descendant:IsA("TextLabel") and descendant.Text == "Alpha")
+end
+check(not hasTitle, "Titles = false shows pictures only")
+check(multiGrid.GridFrame.Parent ~= nil and not (function()
+	for _, descendant in ipairs(multiGrid.Frame:GetDescendants()) do
+		if descendant:IsA("TextBox") then return true end
+	end
+end)(), "Searchable = false has no search box")
+gridDrop:Refresh({ "One", { Title = "Two", Image = "rbxassetid://7" } }, false)
+check(#gridDrop.Cells() == 2 and gridDrop:Get() == nil, "Refresh swaps the items")
+UI:SetTheme("Gear 4")
+check(gridDrop.Cells()[1].Stroke.Color == UI.Theme.Tokens.Stroke, "cell borders follow the theme")
+UI:SetTheme("Gear 5")
+
 --// tab sections
 local group = Window:TabSection({ Title = "Group" })
 local groupTab = group:Tab({ Title = "InGroup" })

@@ -2,6 +2,9 @@
 
 Versions follow `package.json`. Every release is a git tag (`v0.6.1`, ...); `dist/main.lua` at that tag is what users load.
 
+## 0.9.0
+- **GridDropdown**: a searchable picker that shows pictures in a grid. `Columns`, `CellHeight` and `MaxHeight` set the grid (`el:SetGrid` changes it live); items take `Image` (asset id, Store id, URL) or `Icon`; single or multi select, optional titles.
+
 ## 0.8.0
 - **Icon colors**: `IconColor` on every element and tab (a `Color3` or a theme token name), `el:SetIconColor`, tabs also get `IconColorActive` / `tab:SetIconColor`. Default is still the theme accent; asset-id icons are tinted too.
 - **Dropdown items** can be tables `{ Title, Desc, Icon, IconColor }` (title only, title + icon, or everything). Rows have a border, the chosen item's icon shows in the closed button, search also matches descriptions.
