@@ -213,6 +213,113 @@ Elements:Slider({
 	end,
 })
 
+--// 3D previews: a model built here (never parented to the world), plus your own character
+local function demoOrb()
+	local model = Instance.new("Model")
+	local orb = Instance.new("Part")
+	orb.Shape = Enum.PartType.Ball
+	orb.Size = Vector3.new(4, 4, 4)
+	orb.Color = Color3.fromRGB(255, 190, 60)
+	orb.Material = Enum.Material.Neon
+	orb.Parent = model
+	local ring = Instance.new("Part")
+	ring.Shape = Enum.PartType.Cylinder
+	ring.Size = Vector3.new(0.4, 7, 7)
+	ring.Color = Color3.fromRGB(255, 255, 255)
+	ring.Material = Enum.Material.SmoothPlastic
+	ring.CFrame = CFrame.Angles(0, 0, math.rad(90)) * CFrame.Angles(math.rad(70), 0, 0)
+	ring.Parent = model
+	return model
+end
+
+local function demoTower()
+	local model = Instance.new("Model")
+	for level = 1, 4 do
+		local block = Instance.new("Part")
+		block.Size = Vector3.new(6 - level, 1.4, 6 - level)
+		block.Position = Vector3.new(0, (level - 1) * 1.5, 0)
+		block.Color = Color3.fromRGB(255, 80 + level * 40, 70)
+		block.Material = Enum.Material.SmoothPlastic
+		block.Parent = model
+	end
+	return model
+end
+
+local preview = Elements:Viewport({
+	Title = "Viewport (drag to turn)",
+	Desc = "Source: Model, Character, Asset (id), UserId or Mesh. Look: Yaw, Pitch, Zoom, FieldOfView, Rotate.",
+	Icon = "lucide:box",
+	Height = 200,
+	Character = true,
+	Rotate = true,
+})
+
+Elements:Button({
+	Title = "Show the orb",
+	Desc = "viewport:SetModel(instance)",
+	Callback = function()
+		preview:SetModel(demoOrb())
+	end,
+})
+
+Elements:Button({
+	Title = "Show my character",
+	Desc = "viewport:SetCharacter()",
+	Callback = function()
+		preview:SetCharacter()
+	end,
+})
+
+Elements:Input({
+	Title = "Show an asset",
+	Desc = "viewport:SetAsset(id): a model / accessory id; needs game:GetObjects.",
+	Placeholder = "asset id",
+	Numeric = true,
+	Callback = function(text)
+		if text ~= "" then
+			preview:SetAsset(text)
+		end
+	end,
+})
+
+Elements:Slider({
+	Title = "Viewport zoom",
+	Value = { Min = 0.5, Max = 3, Default = 1 },
+	Step = 0.1,
+	Suffix = "x",
+	Callback = function(value)
+		preview:SetZoom(value)
+	end,
+})
+
+Elements:Toggle({
+	Title = "Viewport spins",
+	Value = true,
+	Callback = function(on)
+		preview:SetRotate(on and 25 or false)
+	end,
+})
+
+track(Elements:GridDropdown({
+	Title = "Models in a grid (Image or Viewport per item)",
+	Desc = "Items with Viewport show a 3D model that turns while hovered; items with Image show a picture.",
+	Flag = "hero",
+	Columns = 3,
+	CellHeight = 112,
+	Viewport = { Rotate = 45, Pitch = 18 },
+	Values = {
+		{ Title = "Me", Viewport = "Character" },
+		{ Title = "Orb", Viewport = demoOrb() },
+		{ Title = "Tower", Viewport = demoTower() },
+		{ Title = "Picture", Image = "132136264088686" },
+		{ Title = "Sword", Icon = "lucide:sword" },
+	},
+	Value = "Orb",
+	Callback = function(value)
+		act("hero " .. tostring(value))
+	end,
+}))
+
 local islands = Elements:Dropdown({
 	Title = "Island (searchable)",
 	Desc = "More than 8 values turns search on automatically.",

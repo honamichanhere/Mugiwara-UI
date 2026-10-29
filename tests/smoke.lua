@@ -400,6 +400,127 @@ UI:SetTheme("Gear 4")
 check(gridDrop.Cells()[1].Stroke.Color == UI.Theme.Tokens.Stroke, "cell borders follow the theme")
 UI:SetTheme("Gear 5")
 
+--// viewport (3D preview)
+local RunService = MOCK.services.RunService
+local function makeModel(size)
+	local model = Instance.new("Model")
+	local part = Instance.new("Part")
+	part.Size = size
+	part.Parent = model
+	Instance.new("Script").Parent = model
+	return model
+end
+local template = makeModel(Vector3.new(4, 6, 2))
+local vp = Main:Viewport({ Title = "Preview", Height = 200, Model = template })
+local view = vp.View
+check(view.State == "ready" and vp.Frame:FindFirstChild("Note", true).Visible == false, "a model source shows right away")
+check(view.Frame.CurrentCamera == view.Camera, "the viewport has its own camera")
+local stage = view.Frame:FindFirstChildOfClass("Model")
+check(stage ~= nil and stage ~= template and #template:GetChildren() == 2, "a copy is shown, the original stays untouched")
+check(stage:FindFirstChildOfClass("Script") == nil and stage:FindFirstChildOfClass("Part") ~= nil, "scripts are stripped from the copy")
+local radius = Vector3.new(4, 6, 2).Magnitude / 2
+local distance = radius / math.sin(math.rad(35 / 2)) * 0.8
+local function cameraPosition()
+	return view.Camera.CFrame.Position
+end
+check(math.abs(cameraPosition().Magnitude - distance) < 1e-6, "the camera distance fits the model")
+vp:SetZoom(2)
+check(math.abs(cameraPosition().Magnitude - distance / 2) < 1e-6, "zoom moves the camera closer")
+vp:SetZoom(1)
+vp:SetYaw(0)
+vp:SetPitch(0)
+check(math.abs(cameraPosition().X) < 1e-6 and cameraPosition().Z > 0, "yaw 0 looks from the front")
+vp:SetYaw(90)
+check(cameraPosition().X > distance * 0.99 and math.abs(cameraPosition().Z) < 1e-6, "yaw orbits around the model")
+vp:SetYaw(0)
+vp:SetPitch(60)
+check(cameraPosition().Y > 0, "a positive pitch looks from above")
+vp:SetPitch(400)
+check(select(2, view:GetCamera()) == 85, "pitch is clamped")
+vp:SetYaw(0)
+vp:SetPitch(0)
+
+-- dragging turns the model
+local pointerState = Instance.new("Folder")
+local press = { UserInputType = Enum.UserInputType.MouseButton1, Position = Vector3.new(100, 100, 0), Changed = pointerState.Changed, UserInputState = Enum.UserInputState.Begin }
+view.Frame.InputBegan:Fire(press)
+MOCK.services.UserInputService.InputChanged:Fire({ UserInputType = Enum.UserInputType.MouseMovement, Position = Vector3.new(200, 100, 0) })
+check(select(1, view:GetCamera()) == -60, "dragging sideways turns it")
+press.UserInputState = Enum.UserInputState.End
+pointerState.Changed:Fire()
+
+-- spinning
+local spinner = Main:Viewport({ Model = template, Rotate = true, Draggable = false })
+check(spinner.View.Frame.Active == false, "a non-draggable viewport lets clicks through")
+local before = spinner.View:GetCamera()
+RunService.Heartbeat:Fire(2)
+check(select(1, spinner.View:GetCamera()) == before + 50, "Rotate = true turns 25 degrees a second")
+spinner:SetRotate(false)
+RunService.Heartbeat:Fire(2)
+check(select(1, spinner.View:GetCamera()) == before + 50, "SetRotate(false) stops it")
+spinner:SetRotate(100)
+RunService.Heartbeat:Fire(1)
+check(select(1, spinner.View:GetCamera()) == before + 150, "SetRotate(speed) restarts at that speed")
+
+-- other sources
+local locked = makeModel(Vector3.new(2, 2, 2))
+locked.Archivable = false
+local lockedView = Main:Viewport({ Model = locked })
+check(lockedView.View.State == "ready" and locked.Archivable == false, "a model that is not Archivable still works")
+MOCK_OBJECTS["rbxassetid://700"] = makeModel(Vector3.new(3, 3, 3))
+check(Main:Viewport({ Asset = 700 }).View.State == "ready", "asset ids load through GetObjects")
+check(Main:Viewport({ Source = "rbxassetid://700" }).View.State == "ready", "Source takes the same things")
+local missing = Main:Viewport({ Asset = 701 })
+check(missing.View.State == "failed" and missing.Frame:FindFirstChild("Note", true).Visible, "an asset with nothing to draw says so")
+MOCK.localPlayer.Character = makeModel(Vector3.new(2, 5, 1))
+check(Main:Viewport({ Character = true }).View.State == "ready", "your character")
+MOCK.localPlayer.Character = nil
+check(Main:Viewport({ Character = true }).View.State == "failed", "no character yet is reported, not an error")
+local meshView = Main:Viewport({ Mesh = { MeshId = "rbxassetid://5", TextureId = "rbxassetid://6", Size = Vector3.new(2, 2, 2) } })
+check(meshView.View.State == "ready" and meshView.View.Frame:FindFirstChild("Stage"):FindFirstChild("Mesh"):FindFirstChildOfClass("SpecialMesh").MeshId == "rbxassetid://5", "mesh specs")
+check(Main:Viewport({ UserId = 1 }).View.State == "failed", "a user id the executor cannot build fails politely")
+vp:SetSource("not a source")
+check(view.State == "failed", "unsupported sources fail politely")
+vp:SetModel(template)
+check(view.State == "ready", "SetModel swaps the content")
+vp:Clear()
+check(view.State == "empty" and view.Frame:FindFirstChildOfClass("Model") == nil, "Clear removes it")
+check(Main:Viewport({ Title = "Plain", Background = false }).Frame:FindFirstChild("Stage", true).BackgroundTransparency == 1, "Background = false is transparent")
+check(not Main:Viewport({ Height = 90 }).Top.Visible, "a viewport card without text has no header")
+vp:Destroy()
+
+-- grid dropdown: image or viewport per item
+local heroes = Main:GridDropdown({
+	Title = "Heroes",
+	Columns = 2,
+	Viewport = { Rotate = 60 },
+	Values = {
+		{ Title = "Statue", Viewport = template },
+		{ Title = "Both", Image = "rbxassetid://5", Viewport = { Asset = 700, Zoom = 1.5 } },
+		{ Title = "Broken", Image = "rbxassetid://6", Viewport = { Asset = 701 } },
+		{ Title = "Photo", Image = "rbxassetid://5" },
+	},
+	Value = "Statue",
+})
+local heroCells = heroes.Cells()
+check(heroCells[1].View and heroCells[1].View.State == "ready", "an item with a Viewport shows the model")
+check(heroCells[4].View == nil and heroCells[4].Frame:FindFirstChild("Picture", true) ~= nil, "an item with an Image keeps the picture")
+check(select(3, heroCells[2].View:GetCamera()) == 1.5, "a viewport table sets its own look")
+check(heroCells[2].Frame:FindFirstChild("Picture", true).Visible == false, "the picture gives way once the model is ready")
+check(heroCells[3].View.State == "failed" and heroCells[3].Frame:FindFirstChild("Picture", true).Visible ~= false, "the picture stays when the model fails")
+check(heroCells[1].View.Frame.Active == false, "cell viewports do not swallow the click")
+local yawBefore = heroCells[1].View:GetCamera()
+heroCells[1].Frame.MouseEnter:Fire()
+RunService.Heartbeat:Fire(1)
+check(select(1, heroCells[1].View:GetCamera()) == yawBefore + 60, "a hovered cell turns its model")
+heroCells[1].Frame.MouseLeave:Fire()
+RunService.Heartbeat:Fire(1)
+check(select(1, heroCells[1].View:GetCamera()) == yawBefore + 60, "and stops when the pointer leaves")
+check(heroes.Right:FindFirstChild("Viewport", true) ~= nil, "the chosen model shows in the closed button")
+heroCells[4].Frame.MouseButton1Click:Fire()
+check(heroes.Right:FindFirstChild("Viewport", true) == nil and heroes:Get() == "Photo", "choosing a picture item swaps it")
+check(heroes.Cells()[1].View ~= heroCells[1].View, "rebuilding replaces the viewports")
+
 --// tab sections
 local group = Window:TabSection({ Title = "Group" })
 local groupTab = group:Tab({ Title = "InGroup" })

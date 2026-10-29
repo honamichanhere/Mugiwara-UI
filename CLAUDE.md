@@ -36,7 +36,7 @@ src/components/Window.lua    window chrome, topbar, tabs, config section, theme 
 src/components/Container.lua element methods shared by Tab / Section / Group; Section nesting limit = 2
 src/components/Base.lua      the glass card every element is built on (Card, Extra, Expandable, Field, Gradient)
 src/components/elements/     Button Toggle Slider Dropdown Input Keybind Colorpicker Text(Label/Paragraph/Divider)
-                             ProgressBar Code Image GridDropdown Chat
+                             ProgressBar Code Image GridDropdown Viewport Chat
 src/components/              Popup, Dialog, Notification, Tab, TabSection, Shell + Neon (shared look),
                              KeySystem, Loading, ChatTransports
 build/                       build.mjs (bundler), check.mjs (syntax + undefined globals)
@@ -104,7 +104,7 @@ Kill switch: `npm run chat:off|readonly|on` in `server/worker`. The public URL i
 
 Done and tested by the owner in an executor: window, all elements except chat, themes, Key / Loading UI, icons.
 The live chat was tested by the owner with a friend (v0.6.x). Not verified yet: the chat safeguards (v0.7.0) on real
-accounts, behavior on every executor (Delta, Xeno, Solara) and on real phones. Missing compared to WindUI: Video, Viewport.
+accounts, behavior on every executor (Delta, Xeno, Solara) and on real phones. Missing compared to WindUI: Video. The Viewport element and GridDropdown viewport items (v0.10.0) are only tested by the mock.
 
 ## Releasing
 

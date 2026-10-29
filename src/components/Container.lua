@@ -17,6 +17,7 @@ local ProgressBar = Import("components/elements/ProgressBar")
 local Code = Import("components/elements/Code")
 local ImageElement = Import("components/elements/Image")
 local Chat = Import("components/elements/Chat")
+local ViewportElement = Import("components/elements/Viewport")
 
 local Create, Tween = Utility.Create, Utility.Tween
 
@@ -98,6 +99,11 @@ end
 
 function Container:Image(opts)
 	return ImageElement(self, opts)
+end
+
+-- 3D preview of a model, your character, an asset id or a mesh; drag to turn it.
+function Container:Viewport(opts)
+	return ViewportElement(self, opts)
 end
 
 -- Live chat between everyone running the hub. Needs a Transport (MugiwaraUI.ChatTransports).

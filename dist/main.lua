@@ -1,4 +1,4 @@
--- Mugiwara UI v0.9.0
+-- Mugiwara UI v0.10.0
 -- Glass + neon Gear 5 UI library for Roblox script hubs.
 -- https://github.com/honamichanhere/Mugiwara-UI  |  MIT License
 
@@ -781,6 +781,7 @@ local ProgressBar = Import("components/elements/ProgressBar")
 local Code = Import("components/elements/Code")
 local ImageElement = Import("components/elements/Image")
 local Chat = Import("components/elements/Chat")
+local ViewportElement = Import("components/elements/Viewport")
 
 local Create, Tween = Utility.Create, Utility.Tween
 
@@ -862,6 +863,11 @@ end
 
 function Container:Image(opts)
 	return ImageElement(self, opts)
+end
+
+-- 3D preview of a model, your character, an asset id or a mesh; drag to turn it.
+function Container:Viewport(opts)
+	return ViewportElement(self, opts)
 end
 
 -- Live chat between everyone running the hub. Needs a Transport (MugiwaraUI.ChatTransports).
@@ -6761,6 +6767,7 @@ __modules["components/elements/GridDropdown"] = function(Import)
 local Utility = Import("core/Utility")
 local Compat = Import("core/Compat")
 local Icons = Import("core/Icons")
+local ViewportView = Import("core/ViewportView")
 local Base = Import("components/Base")
 
 local Create, Tween = Utility.Create, Utility.Tween
@@ -6776,7 +6783,7 @@ local SCALE_TYPES = {
 	Stretch = Enum.ScaleType.Stretch,
 }
 
--- Values entries are strings or tables { Title, Image, Icon, IconColor }. Title is the value Get() / Callback return.
+-- Values entries are strings or tables { Title, Image, Viewport, Icon, IconColor }. Title is the value Get() / Callback return.
 local function normalize(list)
 	local names, meta = {}, {}
 	for _, item in ipairs(list or {}) do
@@ -6784,7 +6791,12 @@ local function normalize(list)
 			local name = item.Title or item.Name or item.Value
 			if name ~= nil then
 				table.insert(names, name)
-				meta[name] = { Image = item.Image, Icon = item.Icon, IconColor = item.IconColor }
+				meta[name] = {
+					Image = item.Image,
+					Viewport = item.Viewport ~= nil and item.Viewport or item.Model,
+					Icon = item.Icon,
+					IconColor = item.IconColor,
+				}
 			end
 		else
 			table.insert(names, item)
@@ -6793,12 +6805,17 @@ local function normalize(list)
 	return names, meta
 end
 
--- opts: Title, Desc, Icon, Values = { "a", { Title = "Sword", Image = "rbxassetid://...", Icon = "lucide:sword" } },
+-- opts: Title, Desc, Icon, Values = { "a", { Title = "Sword", Image = "rbxassetid://...", Icon = "lucide:sword" },
+--                                  { Title = "Hero", Viewport = <model | "Character" | asset id | { Asset, Yaw, Zoom... }> } },
 --       Value (string | table when Multi), Multi, AllowNone, Searchable (default true), Placeholder, Callback, Flag,
 --       Columns (3), CellHeight (104), MaxHeight (260, the grid scrolls beyond it), Titles (false = pictures only),
 --       Scale ("Crop" | "Fit" | "Stretch")
 -- Image takes an asset id, rbxassetid://, or an http(s) URL (Store ids are Decals and are converted, see
 -- Compat.ResolveImage). Icon takes an icon-set name and is drawn small in the middle when there is no Image.
+-- Viewport shows a 3D model instead (see core/ViewportView.lua for what it accepts); it can sit next to an Image,
+-- which is then shown until the model has loaded (and stays if it fails). Cells turn slowly while hovered.
+-- opts.Viewport = { Rotate = speed | false (hover spin), Yaw, Pitch, Zoom, FieldOfView, Ambient... } sets the look of all of them.
+-- Each viewport is a small render surface: a few dozen is fine, hundreds are not.
 -- el:SetGrid({ Columns, CellHeight, MaxHeight }) changes the grid later.
 return function(container, opts)
 	opts = opts or {}
@@ -6810,6 +6827,9 @@ return function(container, opts)
 	local cellHeight = opts.CellHeight or 104
 	local maxHeight = opts.MaxHeight or 260
 	local showTitles = opts.Titles ~= false
+	local viewportLook = type(opts.Viewport) == "table" and opts.Viewport or {}
+	local hoverSpin = viewportLook.Rotate ~= false
+	local hoverSpeed = type(viewportLook.Rotate) == "number" and viewportLook.Rotate or 40
 	local scaleType = SCALE_TYPES[opts.Scale or "Crop"] or Enum.ScaleType.Crop
 
 	local el = Base.Card(container, opts, 156, 28)
@@ -6823,10 +6843,11 @@ return function(container, opts)
 
 	--// pictures -------------------------------------------------------------------
 	-- Fills `slot` with the item's picture, its icon, or the first letter of its title.
-	local function paintThumb(name, slot, radius, iconSize)
+	-- Returns the ViewportView when the item has a Viewport.
+	local function paintThumb(name, slot, radius, iconSize, still)
 		local info = meta[name]
-		local letter
-		if not (info and (info.Image or info.Icon)) or (info.Image and not info.Icon) then
+		local letter, picture
+		if not (info and info.Icon and not info.Image and info.Viewport == nil) then
 			letter = Create("TextLabel", {
 				Size = UDim2.fromScale(1, 1),
 				Text = string.upper(string.sub(tostring(name), 1, 1)),
@@ -6850,6 +6871,7 @@ return function(container, opts)
 				Parent = slot,
 			})
 			Utility.Corner(image, radius)
+			picture = image
 			local function show(asset, instant)
 				image.Image = asset
 				if letter then
@@ -6874,6 +6896,29 @@ return function(container, opts)
 					end
 				end)
 			end
+		end
+
+		if info.Viewport ~= nil then
+			local look = ViewportView.Options(viewportLook, info.Viewport)
+			look.Draggable = false -- a cell is a button: dragging would fight with clicking
+			look.Rotate = nil -- spinning is hover-only, see the cell handlers
+			local view = ViewportView.new(slot, look)
+			view.OnState = function(state)
+				if state == "ready" then
+					if letter then
+						letter.Visible = false
+					end
+					if picture then
+						picture.Visible = false
+					end
+				end
+			end
+			view:SetSource(info.Viewport)
+			return view
+		end
+
+		if info.Image then
+			return
 		elseif info.Icon then
 			local holder = Create("Frame", {
 				AnchorPoint = Vector2.new(0.5, 0.5),
@@ -6987,7 +7032,7 @@ return function(container, opts)
 			label.Text = table.concat(names, ", ")
 			label.TextTransparency = 0
 			local info = not multi and #names == 1 and meta[names[1]] or nil
-			if info and (info.Image or info.Icon) then
+			if info and (info.Image or info.Icon or info.Viewport ~= nil) then
 				fieldThumb = Create("Frame", {
 					AnchorPoint = Vector2.new(0, 0.5),
 					Position = UDim2.new(0, 6, 0.5, 0),
@@ -6997,7 +7042,7 @@ return function(container, opts)
 					Parent = field,
 				})
 				Utility.Corner(fieldThumb, 5)
-				paintThumb(names[1], fieldThumb, 5, 14)
+				paintThumb(names[1], fieldThumb, 5, 14, true)
 			end
 		end
 		local left = fieldThumb and 32 or 10
@@ -7028,6 +7073,9 @@ return function(container, opts)
 
 	local function clearCells()
 		for _, cell in ipairs(cells) do
+			if cell.View then
+				cell.View:Destroy()
+			end
 			cell.Frame:Destroy()
 		end
 		cells = {}
@@ -7063,7 +7111,7 @@ return function(container, opts)
 				})
 				Utility.Corner(thumb, 7)
 				theme:Bind(thumb, { BackgroundColor3 = "Field", BackgroundTransparency = "FieldAlpha" })
-				paintThumb(name, thumb, 7, 30)
+				local view = paintThumb(name, thumb, 7, 30)
 
 				if showTitles then
 					local text = Create("TextLabel", {
@@ -7096,15 +7144,21 @@ return function(container, opts)
 				check.Position = UDim2.fromScale(0.5, 0.5)
 				Icons.Bind(theme, check, "OnAccent")
 
-				local cell = { Frame = button, Stroke = stroke, Badge = badge, Name = name }
+				local cell = { Frame = button, Stroke = stroke, Badge = badge, Name = name, View = view }
 				table.insert(cells, cell)
 				paintCell(cell, false)
 
 				button.MouseEnter:Connect(function()
 					paintCell(cell, true)
+					if view and hoverSpin then
+						view:Spin(true, hoverSpeed)
+					end
 				end)
 				button.MouseLeave:Connect(function()
 					paintCell(cell, false)
+					if view then
+						view:Spin(false)
+					end
 				end)
 				button.MouseButton1Click:Connect(function()
 					choose(name)
@@ -7964,6 +8018,160 @@ return function(container, opts)
 	end))
 
 	return Base.Finish(container, el, opts, "Toggle")
+end
+end
+
+__modules["components/elements/Viewport"] = function(Import)
+--// Viewport: a card with a 3D preview (a model, your character, an asset, a mesh) that you can turn by dragging.
+
+local Players = game:GetService("Players")
+
+local Utility = Import("core/Utility")
+local ViewportView = Import("core/ViewportView")
+local Base = Import("components/Base")
+
+local Create = Utility.Create
+
+-- opts: Title, Desc, Icon, Height (180), plus ONE source:
+--         Model = Instance, Character = true | Player, Asset = id, UserId = id, Mesh = { MeshId, TextureId, Size, Scale },
+--         or Source = any of those (see core/ViewportView.lua)
+--       look: Yaw (-25), Pitch (12), Zoom (1), FieldOfView (35), Rotate (true = 25 deg/s, or a number), Draggable (true),
+--             Ambient, LightColor, LightDirection
+--       Background: nil = the theme's field color, false = transparent, Color3 = that color
+--       Follow (default true): a Character source reloads when you respawn
+-- el:SetModel / SetAsset / SetCharacter / SetUserId / SetMesh / SetSource / Clear / Refresh,
+-- el:SetYaw / SetPitch / SetZoom / SetRotate(speed | false), el.View (the ViewportView), el:GetViewport()
+return function(container, opts)
+	opts = opts or {}
+	local theme = container.Window.Theme
+	local el = Base.Card(container, opts)
+
+	local hasHeader = el.Top.Visible
+	local extra = Base.Extra(el, opts.Height or 180, hasHeader and 10 or 0)
+
+	local stageFrame = Create("Frame", {
+		Name = "Stage",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.new(0, 0, 0),
+		ClipsDescendants = true,
+		Parent = extra,
+	})
+	Utility.Corner(stageFrame, 8)
+	if opts.Background == false then
+		stageFrame.BackgroundTransparency = 1
+	elseif typeof(opts.Background) == "Color3" then
+		stageFrame.BackgroundColor3 = opts.Background
+	else
+		theme:Bind(stageFrame, { BackgroundColor3 = "Field", BackgroundTransparency = "FieldAlpha" })
+	end
+
+	local view = ViewportView.new(stageFrame, opts)
+	el.View = view
+
+	local note = Create("TextLabel", {
+		Name = "Note",
+		Size = UDim2.fromScale(1, 1),
+		Text = "Nothing to show",
+		Font = Utility.Fonts.Desc,
+		TextSize = 13,
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		Parent = stageFrame,
+	})
+	theme:Bind(note, { TextColor3 = "Muted" })
+
+	view.OnState = function(state, message)
+		note.Visible = state ~= "ready"
+		if state == "loading" then
+			note.Text = "Loading..."
+		elseif state == "failed" then
+			note.Text = message or "Could not load this model"
+		else
+			note.Text = "Nothing to show"
+		end
+	end
+
+	--// source ----------------------------------------------------------------------
+	function el:SetSource(source)
+		view:SetSource(source)
+	end
+
+	function el:SetModel(model)
+		view:SetSource(model)
+	end
+
+	function el:SetAsset(id)
+		view:SetSource({ Asset = id })
+	end
+
+	-- player: a Player (default: you)
+	function el:SetCharacter(player)
+		view:SetSource(player or "Character")
+	end
+
+	function el:SetUserId(userId)
+		view:SetSource({ UserId = userId })
+	end
+
+	function el:SetMesh(spec)
+		view:SetSource({ Mesh = spec })
+	end
+
+	function el:Clear()
+		view:Clear()
+	end
+
+	function el:Refresh()
+		view:Refresh()
+	end
+
+	--// camera ----------------------------------------------------------------------
+	function el:SetYaw(degrees)
+		view:SetYaw(degrees)
+	end
+
+	function el:SetPitch(degrees)
+		view:SetPitch(degrees)
+	end
+
+	function el:SetZoom(value)
+		view:SetZoom(value)
+	end
+
+	-- speed in degrees per second; false / 0 stops
+	function el:SetRotate(speed)
+		if not speed or speed == 0 then
+			view:Spin(false)
+		else
+			view:Spin(true, speed == true and 25 or speed)
+		end
+	end
+
+	function el:GetViewport()
+		return view.Frame
+	end
+
+	--// start ------------------------------------------------------------------------
+	if ViewportView.HasSource(opts) then
+		view:SetSource(opts)
+	end
+
+	-- a respawn builds a new character: show it too
+	local followsCharacter = opts.Source == "Character" or opts.Character == true or opts.Source == true
+	local player = Players.LocalPlayer
+	if followsCharacter and opts.Follow ~= false and player and player.CharacterAdded then
+		el.Maid:Give(player.CharacterAdded:Connect(function()
+			task.delay(1, function() -- the appearance arrives a moment after the character
+				view:Refresh()
+			end)
+		end))
+	end
+
+	el.Maid:Give(function()
+		view:Destroy()
+	end)
+
+	return Base.Finish(container, el, opts, "Viewport")
 end
 end
 
@@ -9638,6 +9846,434 @@ end
 return Utility
 end
 
+__modules["core/ViewportView"] = function(Import)
+--// ViewportView: draws something 3D (a model, your character, an asset, a mesh) inside a ViewportFrame and
+--// lets the camera orbit around it. Shared by the Viewport element and the GridDropdown cells.
+--//
+--// A source is any of:
+--//   * an Instance (Model, Part, Accessory, Tool...): a copy is shown, the original is never touched
+--//   * true / "Character" / "LocalPlayer": your own character; a Player instance: that player's character
+--//   * an asset id (number, "123", "rbxassetid://123"): loaded with game:GetObjects, then cached
+--//   * a table with ONE of: Model, Character, Asset, UserId, Mesh = { MeshId, TextureId, Size, Scale }
+--//     (UserId builds a rig with Players:CreateHumanoidModelFromUserId, which not every executor allows)
+--//
+--// Look options: Yaw (-25), Pitch (12), Zoom (1), FieldOfView (35), Rotate (true = 25 deg/s, or a number),
+--//   Draggable (true), Ambient, LightColor, LightDirection.
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local Utility = Import("core/Utility")
+
+local Create = Utility.Create
+
+local ViewportView = {}
+
+local assetCache = {} -- digits / "user:id" -> template Instance (failures are not cached)
+
+local SOURCE_KEYS = { "Source", "Model", "Character", "Asset", "UserId", "Mesh" }
+local LOOK_KEYS = { "Yaw", "Pitch", "Zoom", "FieldOfView", "Rotate", "Draggable", "Ambient", "LightColor", "LightDirection" }
+
+-- true when `value` is a table that carries a source (so an element's options can double as a source)
+function ViewportView.HasSource(value)
+	if type(value) ~= "table" then
+		return false
+	end
+	for _, key in ipairs(SOURCE_KEYS) do
+		if value[key] ~= nil and value[key] ~= false then
+			return true
+		end
+	end
+	return false
+end
+
+-- base look options overridden by the look keys of `source` when it is a table
+function ViewportView.Options(base, source)
+	local merged = {}
+	for _, key in ipairs(LOOK_KEYS) do
+		merged[key] = base and base[key]
+	end
+	if type(source) == "table" then
+		for _, key in ipairs(LOOK_KEYS) do
+			if source[key] ~= nil then
+				merged[key] = source[key]
+			end
+		end
+	end
+	return merged
+end
+
+local function digitsOf(value)
+	if type(value) == "number" then
+		return Utility.IdText(value)
+	end
+	if type(value) == "string" then
+		return string.match(value, "^%d+$") or string.match(value, "^rbxassetid://(%d+)$")
+	end
+	return nil
+end
+
+local function characterOf(player)
+	local character = player and player.Character
+	if character then
+		return character
+	end
+	return nil, "That character is not loaded yet"
+end
+
+local function loadAsset(digits)
+	if assetCache[digits] then
+		return assetCache[digits]
+	end
+	local ok, objects = pcall(function()
+		return game:GetObjects("rbxassetid://" .. digits)
+	end)
+	local root = ok and objects and objects[1] or nil
+	if root and objects[2] then
+		local together = Create("Model", { Name = "Asset" })
+		for _, object in ipairs(objects) do
+			object.Parent = together
+		end
+		root = together
+	end
+	if not root then
+		return nil, "Could not load asset " .. digits .. " (needs game:GetObjects, and the asset must be a model)"
+	end
+	assetCache[digits] = root
+	return root
+end
+
+local function loadUser(userId)
+	local key = "user:" .. tostring(userId)
+	if assetCache[key] then
+		return assetCache[key]
+	end
+	local ok, model = pcall(function()
+		return Players:CreateHumanoidModelFromUserId(userId)
+	end)
+	if not ok or not model then
+		return nil, "This executor cannot build a character from a user id"
+	end
+	assetCache[key] = model
+	return model
+end
+
+-- A part with a mesh on it. `Size` is only used to frame the camera: a file mesh keeps its own size.
+local function buildMesh(spec)
+	local part = Create("Part", {
+		Name = "Mesh",
+		Anchored = true,
+		Size = spec.Size or Vector3.new(4, 4, 4),
+	})
+	Create("SpecialMesh", {
+		MeshType = Enum.MeshType.FileMesh,
+		MeshId = spec.MeshId or "",
+		TextureId = spec.TextureId or "",
+		Scale = spec.Scale or Vector3.new(1, 1, 1),
+		Parent = part,
+	})
+	local model = Create("Model", { Name = "Stage" })
+	part.Parent = model
+	return model
+end
+
+-- Returns a template Instance (never modified) or nil plus a reason. May yield.
+function ViewportView.Resolve(source)
+	local kind = typeof(source)
+	if kind == "Instance" then
+		if source:IsA("Player") then
+			return characterOf(source)
+		end
+		return source
+	end
+	if source == true or source == "Character" or source == "LocalPlayer" then
+		return characterOf(Players.LocalPlayer)
+	end
+	local digits = digitsOf(source)
+	if digits then
+		return loadAsset(digits)
+	end
+	if kind == "table" then
+		if source.Source ~= nil then
+			return ViewportView.Resolve(source.Source)
+		elseif source.Model ~= nil then
+			return ViewportView.Resolve(source.Model)
+		elseif source.Character ~= nil and source.Character ~= false then
+			return ViewportView.Resolve(source.Character)
+		elseif source.Asset ~= nil then
+			return ViewportView.Resolve(source.Asset)
+		elseif source.UserId ~= nil then
+			return loadUser(source.UserId)
+		elseif type(source.Mesh) == "table" then
+			return buildMesh(source.Mesh)
+		end
+	end
+	return nil, "Unsupported viewport source"
+end
+
+-- Clone that also works when the original is not Archivable
+local function copyOf(template)
+	local ok, copy = pcall(function()
+		return template:Clone()
+	end)
+	if ok and copy then
+		return copy
+	end
+	local wasArchivable = template.Archivable
+	pcall(function()
+		template.Archivable = true
+	end)
+	ok, copy = pcall(function()
+		return template:Clone()
+	end)
+	pcall(function()
+		template.Archivable = wasArchivable
+	end)
+	if ok and copy then
+		return copy
+	end
+	return nil
+end
+
+-- Scripts and sounds do nothing in a ViewportFrame; dropping them keeps the copy light
+local function strip(root)
+	for _, descendant in ipairs(root:GetDescendants()) do
+		if descendant:IsA("LuaSourceContainer") or descendant:IsA("Sound") then
+			pcall(function()
+				descendant:Destroy()
+			end)
+		end
+	end
+end
+
+local function asModel(object)
+	if object:IsA("Model") then
+		return object
+	end
+	local model = Create("Model", { Name = "Stage" })
+	object.Parent = model
+	return model
+end
+
+-- parent: where the ViewportFrame goes. Returns a view; view.Frame is the ViewportFrame.
+-- view.OnState(state, message) is called with "loading", "ready", "failed" or "empty".
+function ViewportView.new(parent, opts)
+	opts = opts or {}
+	local view = { Maid = Utility.Maid.new(), State = "empty" }
+	local maid = view.Maid
+
+	local frame = Create("ViewportFrame", {
+		Name = "Viewport",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Active = opts.Draggable ~= false, -- an Active frame swallows clicks meant for the cell it sits in
+		Ambient = opts.Ambient or Color3.fromRGB(190, 192, 205),
+		LightColor = opts.LightColor or Color3.fromRGB(255, 255, 255),
+		LightDirection = opts.LightDirection or Vector3.new(-1, -1.2, -0.8),
+		Parent = parent,
+	})
+	local camera = Create("Camera", { FieldOfView = opts.FieldOfView or 35, Parent = frame })
+	frame.CurrentCamera = camera
+	view.Frame = frame
+	view.Camera = camera
+
+	local stage, center, radius
+	local yaw, pitch, zoom = opts.Yaw or -25, opts.Pitch or 12, opts.Zoom or 1
+	local spinSpeed = 0
+	if type(opts.Rotate) == "number" then
+		spinSpeed = opts.Rotate
+	elseif opts.Rotate then
+		spinSpeed = 25
+	end
+	local source, token, dragging = nil, 0, false
+	-- Destroying also fires when an ancestor is destroyed (a cell being rebuilt). Not IsDescendantOf(game):
+	-- executors keep their GUIs in hidden containers that are not part of the game tree.
+	local alive = true
+	maid:Give(frame.Destroying:Connect(function()
+		alive = false
+	end))
+
+	local function setState(state, message)
+		view.State = state
+		view.Message = message
+		if view.OnState then
+			Utility.SafeCall(view.OnState, state, message)
+		end
+	end
+
+	local function aim()
+		if not stage then
+			return
+		end
+		local distance = radius / math.sin(math.rad(camera.FieldOfView / 2)) * 0.8 / zoom
+		camera.CFrame = CFrame.new(center)
+			* CFrame.Angles(0, math.rad(yaw), 0)
+			* CFrame.Angles(-math.rad(pitch), 0, 0)
+			* CFrame.new(0, 0, distance)
+	end
+
+	--// content ----------------------------------------------------------------------
+	local function clear()
+		if stage then
+			stage:Destroy()
+			stage = nil
+		end
+	end
+
+	-- Shows `newSource` (see the top of this file); nil clears the view. Returns immediately: loading
+	-- happens in the background and is reported through OnState.
+	function view:SetSource(newSource)
+		token = token + 1
+		local mine = token
+		source = newSource
+		clear()
+		if newSource == nil then
+			setState("empty")
+			return
+		end
+		setState("loading")
+		task.spawn(function()
+			local template, reason = ViewportView.Resolve(newSource)
+			if mine ~= token or not alive then
+				return
+			end
+			if not template then
+				setState("failed", reason or "Nothing to show")
+				return
+			end
+			local copy = copyOf(template)
+			if not copy then
+				setState("failed", "This model cannot be cloned")
+				return
+			end
+			strip(copy)
+			local model = asModel(copy)
+			model.Parent = frame
+
+			local ok, boxCFrame, boxSize = pcall(function()
+				return model:GetBoundingBox()
+			end)
+			if not ok or not boxSize or boxSize.Magnitude <= 0 then
+				model:Destroy()
+				setState("failed", "There is nothing visible in this model")
+				return
+			end
+			stage = model
+			center = boxCFrame.Position
+			radius = math.max(boxSize.Magnitude / 2, 0.25)
+			aim()
+			setState("ready")
+		end)
+	end
+
+	-- loads the same source again (a respawned character, a changed model)
+	function view:Refresh()
+		if source ~= nil then
+			view:SetSource(source)
+		end
+	end
+
+	function view:Clear()
+		view:SetSource(nil)
+	end
+
+	--// camera -----------------------------------------------------------------------
+	function view:SetYaw(degrees)
+		yaw = degrees
+		aim()
+	end
+
+	function view:SetPitch(degrees)
+		pitch = Utility.Clamp(degrees, -85, 85)
+		aim()
+	end
+
+	function view:SetZoom(value)
+		zoom = Utility.Clamp(value, 0.2, 8)
+		aim()
+	end
+
+	function view:GetCamera()
+		return yaw, pitch, zoom
+	end
+
+	--// spinning ---------------------------------------------------------------------
+	local spinConnection
+	local wantSpin = spinSpeed ~= 0
+
+	local function stopSpin()
+		if spinConnection then
+			spinConnection:Disconnect()
+			spinConnection = nil
+		end
+	end
+
+	local function startSpin()
+		if spinConnection or spinSpeed == 0 then
+			return
+		end
+		spinConnection = RunService.Heartbeat:Connect(function(step)
+			if not alive then
+				stopSpin()
+				return
+			end
+			if not dragging then
+				yaw = yaw + spinSpeed * (step or 0.016)
+				aim()
+			end
+		end)
+	end
+
+	-- Spin(true / false) starts or stops; speed (degrees per second) is optional
+	function view:Spin(on, speed)
+		if speed then
+			spinSpeed = speed
+		end
+		if on == false then
+			stopSpin()
+		elseif spinSpeed ~= 0 then
+			startSpin()
+		end
+	end
+
+	if wantSpin then
+		startSpin()
+	end
+
+	--// dragging to turn it ------------------------------------------------------------
+	if opts.Draggable ~= false then
+		local startPointer, startYaw, startPitch
+		Utility.DragInput(frame, maid, function(input)
+			startPointer = input.Position
+			startYaw, startPitch = yaw, pitch
+			dragging = true
+		end, function(position)
+			if not startPointer then
+				return
+			end
+			local delta = position - startPointer
+			yaw = startYaw - delta.X * 0.6
+			pitch = Utility.Clamp(startPitch + delta.Y * 0.4, -85, 85)
+			aim()
+		end, function()
+			dragging = false
+			startPointer = nil
+		end)
+	end
+
+	function view:Destroy()
+		token = token + 1
+		stopSpin()
+		maid:Clean()
+		frame:Destroy()
+	end
+
+	return view
+end
+
+return ViewportView
+end
+
 __modules["init"] = function(Import)
 --// Mugiwara UI entry point.
 
@@ -9660,7 +10296,7 @@ if env.MugiwaraUI and type(env.MugiwaraUI.Destroy) == "function" then
 end
 
 local Library = {
-	Version = "0.9.0",
+	Version = "0.10.0",
 	Windows = {},
 	Theme = Theme.new("Gear 5"),
 	Icons = Icons,

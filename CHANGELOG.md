@@ -2,6 +2,11 @@
 
 Versions follow `package.json`. Every release is a git tag (`v0.6.1`, ...); `dist/main.lua` at that tag is what users load.
 
+## 0.10.0
+- **Viewport** element: a 3D preview card. Sources: a model (copied, never touched), your character (follows respawns), an asset id, a Roblox user id or a mesh spec. Drag to turn, optional auto-rotate, Yaw / Pitch / Zoom / FieldOfView / lighting / background options, and `SetModel`, `SetAsset`, `SetCharacter`, `SetMesh`... to change it later.
+- **GridDropdown items can use a Viewport instead of an Image** (or both: the picture shows until the model has loaded). Cells turn their model while hovered; `Viewport = { ... }` on the dropdown sets the look.
+- New shared module `core/ViewportView`; the test mock gained CFrame math, `Clone`, `GetBoundingBox` and a class hierarchy.
+
 ## 0.9.0
 - **GridDropdown**: a searchable picker that shows pictures in a grid. `Columns`, `CellHeight` and `MaxHeight` set the grid (`el:SetGrid` changes it live); items take `Image` (asset id, Store id, URL) or `Icon`; single or multi select, optional titles.
 

@@ -73,6 +73,56 @@ local vectorMT = {
 Vector3 = { new = function(x, y, z) return setmetatable({ X = x or 0, Y = y or 0, Z = z or 0 }, vectorMT) end }
 Vector2 = { new = function(x, y) return setmetatable({ X = x or 0, Y = y or 0, Z = 0 }, vectorMT) end }
 
+-- CFrame as a 3x3 rotation (rows) plus a position
+local cframeMT = { __typeof = "CFrame" }
+local function cframe(r, p)
+	return setmetatable({ _r = r, Position = p }, cframeMT)
+end
+local IDENTITY = { { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 } }
+local function mulMat(a, b)
+	local out = {}
+	for i = 1, 3 do
+		out[i] = {}
+		for j = 1, 3 do
+			out[i][j] = a[i][1] * b[1][j] + a[i][2] * b[2][j] + a[i][3] * b[3][j]
+		end
+	end
+	return out
+end
+local function rotate(r, v)
+	return Vector3.new(
+		r[1][1] * v.X + r[1][2] * v.Y + r[1][3] * v.Z,
+		r[2][1] * v.X + r[2][2] * v.Y + r[2][3] * v.Z,
+		r[3][1] * v.X + r[3][2] * v.Y + r[3][3] * v.Z
+	)
+end
+cframeMT.__mul = function(a, b)
+	if getmetatable(b) == cframeMT then
+		return cframe(mulMat(a._r, b._r), rotate(a._r, b.Position) + a.Position)
+	end
+	return rotate(a._r, b) + a.Position
+end
+cframeMT.__index = function(t, key)
+	if key == "LookVector" then
+		return Vector3.new(-t._r[1][3], -t._r[2][3], -t._r[3][3])
+	end
+end
+CFrame = {
+	new = function(x, y, z)
+		if type(x) == "table" then
+			return cframe(IDENTITY, x)
+		end
+		return cframe(IDENTITY, Vector3.new(x or 0, y or 0, z or 0))
+	end,
+	Angles = function(rx, ry, rz)
+		local cx, sx, cy, sy, cz, sz = math.cos(rx), math.sin(rx), math.cos(ry), math.sin(ry), math.cos(rz), math.sin(rz)
+		local mx = { { 1, 0, 0 }, { 0, cx, -sx }, { 0, sx, cx } }
+		local my = { { cy, 0, sy }, { 0, 1, 0 }, { -sy, 0, cy } }
+		local mz = { { cz, -sz, 0 }, { sz, cz, 0 }, { 0, 0, 1 } }
+		return cframe(mulMat(mulMat(mx, my), mz), Vector3.new(0, 0, 0))
+	end,
+}
+
 UDim = { new = function(s, o) return typed("UDim", { Scale = s or 0, Offset = o or 0 }) end }
 UDim2 = {
 	new = function(xs, xo, ys, yo)
@@ -234,7 +284,13 @@ local EVENTS = {
 }
 local GUI_CLASSES = {
 	Frame = true, TextLabel = true, TextButton = true, TextBox = true, ImageLabel = true,
-	ImageButton = true, ScrollingFrame = true, CanvasGroup = true,
+	ImageButton = true, ScrollingFrame = true, CanvasGroup = true, ViewportFrame = true,
+}
+-- class hierarchy for IsA (only what the library asks about)
+local PARENT_CLASSES = {
+	Part = { "BasePart", "PVInstance" }, MeshPart = { "BasePart", "PVInstance" }, Model = { "PVInstance" },
+	Accessory = { "Accoutrement" }, Script = { "LuaSourceContainer" }, LocalScript = { "LuaSourceContainer" },
+	ModuleScript = { "LuaSourceContainer" },
 }
 local DEFAULTS = {
 	AbsoluteSize = function() return Vector2.new(1280, 720) end,
@@ -248,6 +304,7 @@ local DEFAULTS = {
 	Visible = true,
 	Text = "",
 	Rotation = 0,
+	Archivable = true,
 }
 
 local Methods = {}
@@ -281,7 +338,44 @@ end
 
 function Methods.IsA(self, name)
 	local class = rawget(self, "_class")
-	return class == name or (name == "GuiObject" and GUI_CLASSES[class] == true)
+	if class == name or (name == "GuiObject" and GUI_CLASSES[class] == true) then
+		return true
+	end
+	for _, parent in ipairs(PARENT_CLASSES[class] or {}) do
+		if parent == name then
+			return true
+		end
+	end
+	return false
+end
+-- deep copy; nil when the instance is not Archivable (like Roblox)
+function Methods.Clone(self)
+	if self.Archivable == false then
+		return nil
+	end
+	local copy = Instance.new(rawget(self, "_class"))
+	for key, value in pairs(rawget(self, "_props")) do
+		if key ~= "Parent" and typeof(value) ~= "RBXScriptSignal" then
+			rawget(copy, "_props")[key] = value
+		end
+	end
+	for _, child in ipairs(rawget(self, "_children")) do
+		local childCopy = Methods.Clone(child)
+		if childCopy then
+			childCopy.Parent = copy
+		end
+	end
+	return copy
+end
+-- the mock only knows part sizes: the box is centered on the origin and as large as the biggest part per axis
+function Methods.GetBoundingBox(self)
+	local x, y, z = 0, 0, 0
+	for _, part in ipairs(Methods.GetDescendants(self)) do
+		if Methods.IsA(part, "BasePart") and part.Size and part.Size.X then
+			x, y, z = math.max(x, part.Size.X), math.max(y, part.Size.Y), math.max(z, part.Size.Z)
+		end
+	end
+	return CFrame.new(0, 0, 0), Vector3.new(x, y, z)
 end
 function Methods.GetChildren(self)
 	local copy = {}
@@ -491,7 +585,11 @@ game.HttpGet = function(_, url)
 end
 
 -- a Decal asset wraps the real image; the library reads the image id from it
-game.GetObjects = function()
+MOCK_OBJECTS = {} -- "rbxassetid://id" -> Instance, for tests that load models
+game.GetObjects = function(_, uri)
+	if MOCK_OBJECTS[uri] then
+		return { MOCK_OBJECTS[uri] }
+	end
 	local decal = Instance.new("Decal")
 	decal.Texture = "http://www.roblox.com/asset/?id=999"
 	return { decal }

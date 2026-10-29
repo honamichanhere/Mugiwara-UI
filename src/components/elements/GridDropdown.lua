@@ -3,6 +3,7 @@
 local Utility = Import("core/Utility")
 local Compat = Import("core/Compat")
 local Icons = Import("core/Icons")
+local ViewportView = Import("core/ViewportView")
 local Base = Import("components/Base")
 
 local Create, Tween = Utility.Create, Utility.Tween
@@ -18,7 +19,7 @@ local SCALE_TYPES = {
 	Stretch = Enum.ScaleType.Stretch,
 }
 
--- Values entries are strings or tables { Title, Image, Icon, IconColor }. Title is the value Get() / Callback return.
+-- Values entries are strings or tables { Title, Image, Viewport, Icon, IconColor }. Title is the value Get() / Callback return.
 local function normalize(list)
 	local names, meta = {}, {}
 	for _, item in ipairs(list or {}) do
@@ -26,7 +27,12 @@ local function normalize(list)
 			local name = item.Title or item.Name or item.Value
 			if name ~= nil then
 				table.insert(names, name)
-				meta[name] = { Image = item.Image, Icon = item.Icon, IconColor = item.IconColor }
+				meta[name] = {
+					Image = item.Image,
+					Viewport = item.Viewport ~= nil and item.Viewport or item.Model,
+					Icon = item.Icon,
+					IconColor = item.IconColor,
+				}
 			end
 		else
 			table.insert(names, item)
@@ -35,12 +41,17 @@ local function normalize(list)
 	return names, meta
 end
 
--- opts: Title, Desc, Icon, Values = { "a", { Title = "Sword", Image = "rbxassetid://...", Icon = "lucide:sword" } },
+-- opts: Title, Desc, Icon, Values = { "a", { Title = "Sword", Image = "rbxassetid://...", Icon = "lucide:sword" },
+--                                  { Title = "Hero", Viewport = <model | "Character" | asset id | { Asset, Yaw, Zoom... }> } },
 --       Value (string | table when Multi), Multi, AllowNone, Searchable (default true), Placeholder, Callback, Flag,
 --       Columns (3), CellHeight (104), MaxHeight (260, the grid scrolls beyond it), Titles (false = pictures only),
 --       Scale ("Crop" | "Fit" | "Stretch")
 -- Image takes an asset id, rbxassetid://, or an http(s) URL (Store ids are Decals and are converted, see
 -- Compat.ResolveImage). Icon takes an icon-set name and is drawn small in the middle when there is no Image.
+-- Viewport shows a 3D model instead (see core/ViewportView.lua for what it accepts); it can sit next to an Image,
+-- which is then shown until the model has loaded (and stays if it fails). Cells turn slowly while hovered.
+-- opts.Viewport = { Rotate = speed | false (hover spin), Yaw, Pitch, Zoom, FieldOfView, Ambient... } sets the look of all of them.
+-- Each viewport is a small render surface: a few dozen is fine, hundreds are not.
 -- el:SetGrid({ Columns, CellHeight, MaxHeight }) changes the grid later.
 return function(container, opts)
 	opts = opts or {}
@@ -52,6 +63,9 @@ return function(container, opts)
 	local cellHeight = opts.CellHeight or 104
 	local maxHeight = opts.MaxHeight or 260
 	local showTitles = opts.Titles ~= false
+	local viewportLook = type(opts.Viewport) == "table" and opts.Viewport or {}
+	local hoverSpin = viewportLook.Rotate ~= false
+	local hoverSpeed = type(viewportLook.Rotate) == "number" and viewportLook.Rotate or 40
 	local scaleType = SCALE_TYPES[opts.Scale or "Crop"] or Enum.ScaleType.Crop
 
 	local el = Base.Card(container, opts, 156, 28)
@@ -65,10 +79,11 @@ return function(container, opts)
 
 	--// pictures -------------------------------------------------------------------
 	-- Fills `slot` with the item's picture, its icon, or the first letter of its title.
-	local function paintThumb(name, slot, radius, iconSize)
+	-- Returns the ViewportView when the item has a Viewport.
+	local function paintThumb(name, slot, radius, iconSize, still)
 		local info = meta[name]
-		local letter
-		if not (info and (info.Image or info.Icon)) or (info.Image and not info.Icon) then
+		local letter, picture
+		if not (info and info.Icon and not info.Image and info.Viewport == nil) then
 			letter = Create("TextLabel", {
 				Size = UDim2.fromScale(1, 1),
 				Text = string.upper(string.sub(tostring(name), 1, 1)),
@@ -92,6 +107,7 @@ return function(container, opts)
 				Parent = slot,
 			})
 			Utility.Corner(image, radius)
+			picture = image
 			local function show(asset, instant)
 				image.Image = asset
 				if letter then
@@ -116,6 +132,29 @@ return function(container, opts)
 					end
 				end)
 			end
+		end
+
+		if info.Viewport ~= nil then
+			local look = ViewportView.Options(viewportLook, info.Viewport)
+			look.Draggable = false -- a cell is a button: dragging would fight with clicking
+			look.Rotate = nil -- spinning is hover-only, see the cell handlers
+			local view = ViewportView.new(slot, look)
+			view.OnState = function(state)
+				if state == "ready" then
+					if letter then
+						letter.Visible = false
+					end
+					if picture then
+						picture.Visible = false
+					end
+				end
+			end
+			view:SetSource(info.Viewport)
+			return view
+		end
+
+		if info.Image then
+			return
 		elseif info.Icon then
 			local holder = Create("Frame", {
 				AnchorPoint = Vector2.new(0.5, 0.5),
@@ -229,7 +268,7 @@ return function(container, opts)
 			label.Text = table.concat(names, ", ")
 			label.TextTransparency = 0
 			local info = not multi and #names == 1 and meta[names[1]] or nil
-			if info and (info.Image or info.Icon) then
+			if info and (info.Image or info.Icon or info.Viewport ~= nil) then
 				fieldThumb = Create("Frame", {
 					AnchorPoint = Vector2.new(0, 0.5),
 					Position = UDim2.new(0, 6, 0.5, 0),
@@ -239,7 +278,7 @@ return function(container, opts)
 					Parent = field,
 				})
 				Utility.Corner(fieldThumb, 5)
-				paintThumb(names[1], fieldThumb, 5, 14)
+				paintThumb(names[1], fieldThumb, 5, 14, true)
 			end
 		end
 		local left = fieldThumb and 32 or 10
@@ -270,6 +309,9 @@ return function(container, opts)
 
 	local function clearCells()
 		for _, cell in ipairs(cells) do
+			if cell.View then
+				cell.View:Destroy()
+			end
 			cell.Frame:Destroy()
 		end
 		cells = {}
@@ -305,7 +347,7 @@ return function(container, opts)
 				})
 				Utility.Corner(thumb, 7)
 				theme:Bind(thumb, { BackgroundColor3 = "Field", BackgroundTransparency = "FieldAlpha" })
-				paintThumb(name, thumb, 7, 30)
+				local view = paintThumb(name, thumb, 7, 30)
 
 				if showTitles then
 					local text = Create("TextLabel", {
@@ -338,15 +380,21 @@ return function(container, opts)
 				check.Position = UDim2.fromScale(0.5, 0.5)
 				Icons.Bind(theme, check, "OnAccent")
 
-				local cell = { Frame = button, Stroke = stroke, Badge = badge, Name = name }
+				local cell = { Frame = button, Stroke = stroke, Badge = badge, Name = name, View = view }
 				table.insert(cells, cell)
 				paintCell(cell, false)
 
 				button.MouseEnter:Connect(function()
 					paintCell(cell, true)
+					if view and hoverSpin then
+						view:Spin(true, hoverSpeed)
+					end
 				end)
 				button.MouseLeave:Connect(function()
 					paintCell(cell, false)
+					if view then
+						view:Spin(false)
+					end
 				end)
 				button.MouseButton1Click:Connect(function()
 					choose(name)

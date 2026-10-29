@@ -11,7 +11,7 @@ A glass + neon UI library for Roblox script hubs, themed after Luffy's **Gear 5*
 Load a **pinned version** (recommended). A tag never changes, so a later push cannot break the hubs that use it:
 
 ```lua
-local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.9.0/dist/main.lua"))()
+local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.10.0/dist/main.lua"))()
 ```
 
 `.../main/dist/main.lua` always serves the newest build (GitHub caches it for about 5 minutes). Available tags are listed in the
@@ -20,7 +20,7 @@ local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/ho
 ## Quick start
 
 ```lua
-local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.9.0/dist/main.lua"))()
+local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.10.0/dist/main.lua"))()
 
 local Window = MugiwaraUI:CreateWindow({
     Title = "Mugiwara Hub",
@@ -52,7 +52,7 @@ To test local changes without pushing: run `npm run build`, copy `dist/main.lua`
 Three pieces of the same set, all drawn in the active theme:
 
 ```lua
-local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.9.0/dist/main.lua"))()
+local MugiwaraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/honamichanhere/Mugiwara-UI/v0.10.0/dist/main.lua"))()
 
 -- 1) Key UI: a separate card. Validate is YOUR check (HTTP request, hash...), it may yield.
 local KeyUI = MugiwaraUI:KeySystem({
@@ -178,7 +178,8 @@ tab:Button({ Title, Desc, Callback })
 tab:Toggle({ Title, Value, Callback(state) })
 tab:Slider({ Title, Value = { Min, Max, Default }, Step, Suffix, Callback(value) })
 tab:Dropdown({ Title, Values, Value, Multi, AllowNone, Searchable, Callback(value) })  -- el:Refresh(values, keepSelection)
-tab:GridDropdown({ Title, Values, Value, Multi, Columns = 3, CellHeight = 104, MaxHeight = 260, Titles, Callback(value) })  -- pictures in a grid
+tab:GridDropdown({ Title, Values, Value, Multi, Columns = 3, CellHeight = 104, MaxHeight = 260, Titles, Callback(value) })  -- pictures or 3D models in a grid
+tab:Viewport({ Title, Height = 180, Model | Character | Asset | UserId | Mesh, Rotate, Yaw, Pitch, Zoom })  -- 3D preview, drag to turn
 --   Values: "text" or { Title, Desc, Icon, IconColor } per item (title only, title + icon, or everything); Get() returns the Title
 tab:Input({ Title, Value, Placeholder, Numeric, Type = "Input" | "Textarea", Callback(text) })
 tab:Keybind({ Title, Value = "K", Callback(), OnChange(key) })
@@ -195,6 +196,34 @@ local row = tab:Group({ Gap = 8 })         -- children share the width side by s
 row:Button({ Title = "A" }); row:Button({ Title = "B" })
 tab:Section({ Title, Opened })             -- returns a container; section:SetOpen(bool)
 ```
+
+### Viewport (3D preview)
+
+A card that shows something 3D inside a `ViewportFrame`. Drag to turn it; it can also spin by itself. A copy is shown, the original is never touched.
+
+```lua
+local view = Tab:Viewport({
+    Title = "Preview",
+    Height = 200,
+    Character = true,          -- your own character (reloads when you respawn)
+    -- Model = workspace.Boss, -- any Model / Part / Accessory / Tool
+    -- Asset = 1234567,        -- an asset id (a model or accessory), loaded with game:GetObjects and cached
+    -- UserId = 156,           -- a rig built from a Roblox user id (not every executor allows it)
+    -- Mesh = { MeshId = "rbxassetid://...", TextureId = "rbxassetid://...", Size = Vector3.new(4, 4, 4) },
+    Rotate = true,             -- true = 25 degrees a second, or a number; false / nil = still
+    Yaw = -25, Pitch = 12, Zoom = 1, FieldOfView = 35,
+    Draggable = true,
+    Background = nil,          -- nil = theme field color, false = transparent, or a Color3
+})
+view:SetModel(workspace.Boss)    -- also SetCharacter(player), SetAsset(id), SetUserId(id), SetMesh(spec), SetSource(any), Clear()
+view:SetYaw(90) view:SetPitch(20) view:SetZoom(1.5) view:SetRotate(40)
+```
+
+Not everything can be copied: models that streaming has not loaded, or that the game blocks from cloning, show a short message instead. `Ambient`, `LightColor` and `LightDirection` change the lighting inside the viewport. The 3D drawing itself can only be checked in a real executor.
+
+### Grid dropdown (pictures or 3D models)
+
+Each item chooses its own picture: `Image`, a 3D `Viewport`, or an `Icon`. A `Viewport` item takes anything the Viewport element takes (a model, `"Character"`, an asset id, or a table such as `{ Asset = 123, Zoom = 1.5 }`) and turns slowly while hovered. Put an `Image` next to it and the picture shows until the model has loaded (and stays if it cannot). `Viewport = { Rotate = 45, Pitch = 18, ... }` on the dropdown sets the look of all of them. Every viewport is a small render surface, so keep it to a few dozen.
 
 ### Grid dropdown (pictures)
 
@@ -352,7 +381,8 @@ Elements in WindUI's source tree and where they stand here:
 | Code, ProgressBar, Image, Space | available |
 | (not in WindUI) Chat | `tab:Chat`, needs the Cloudflare Worker in `server/worker` |
 | Group / HStack | `tab:Group()` (a row; equal widths). VStack is simply the default (elements stack vertically) |
-| Video, Viewport | **missing** |
+| Viewport | `tab:Viewport` (3D preview, also usable per item in `GridDropdown`) |
+| Video | **missing** |
 
 Other differences to check when porting: config saving goes through `Flag` + `Window:SaveConfig` / `ConfigSection` (not WindUI's config manager API), sections can be nested at most 2 levels, and the sidebar group is `Window:TabSection`.
 
