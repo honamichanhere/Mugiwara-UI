@@ -19,8 +19,9 @@ local Shell = Import("components/Shell")
 
 local Create, Tween = Utility.Create, Utility.Tween
 
--- 21:9
-local WIDTH, HEIGHT = 700, 300
+-- wide card; the height follows the content (a row of link buttons makes it taller)
+local WIDTH = 700
+local HEIGHT_PLAIN, HEIGHT_WITH_LINKS = 224, 262
 local SIDE = 250
 
 local function trim(text)
@@ -31,6 +32,8 @@ end
 
 -- opts: Title, Subtitle, Icon, Note (false hides it), Heading, Placeholder, Folder,
 --       SaveKey (default true; false = never save the key), Links = { { Title, Link, Icon, Callback } },
+--       SubmitText ("Verify Key"), CheckingText ("Checking..."), SuccessText ("Access granted"): the button texts,
+--       Height (card height in pixels, default follows the content), MobileScale (default 0.75 on phones),
 --       Validate(key) -> true | false, message  (required, may yield; only `true` accepts),
 --       OnSuccess(key), OnClose()
 return function(library, opts)
@@ -44,6 +47,9 @@ return function(library, opts)
 	local keyPath = folder .. "/key.txt"
 	local canSave = opts.SaveKey ~= false and Compat.FilesSupported
 	local links = opts.Links or {}
+	local submitText = opts.SubmitText or "Verify Key"
+	local checkingText = opts.CheckingText or "Checking..."
+	local successText = opts.SuccessText or "Access granted"
 
 	local KeyUI = {
 		Completed = Utility.Signal.new(true),
@@ -147,7 +153,7 @@ return function(library, opts)
 		busy = true
 		setStatus("Checking key...", "busy")
 		if submitLabel then
-			submitLabel.Text = "Checking..."
+			submitLabel.Text = checkingText
 		end
 
 		task.spawn(function()
@@ -156,7 +162,7 @@ return function(library, opts)
 				busy = false -- an accepted key keeps the card locked while it plays the success animation
 				setStatus(message or "Invalid key.", "error")
 				if submitLabel then
-					submitLabel.Text = "Verify Key"
+					submitLabel.Text = submitText
 				end
 				shake()
 				return
@@ -164,7 +170,7 @@ return function(library, opts)
 
 			setStatus(message or "Key accepted.", "success")
 			if submitLabel then
-				submitLabel.Text = "Access granted"
+				submitLabel.Text = successText
 			end
 			if submitButton then
 				submitButton.BackgroundColor3 = theme.Tokens.Success
@@ -187,7 +193,8 @@ return function(library, opts)
 	local function build()
 		shell = Shell.new(library, {
 			Name = "Key",
-			Size = Vector2.new(WIDTH, HEIGHT),
+			Size = Vector2.new(WIDTH, opts.Height or (#links > 0 and HEIGHT_WITH_LINKS or HEIGHT_PLAIN)),
+			MobileScale = opts.MobileScale,
 			Backdrop = 0.45,
 			-- covers the whole screen including the top bar strip (the backdrop used to stop below it)
 			IgnoreGuiInset = true,
@@ -218,8 +225,8 @@ return function(library, opts)
 			BackgroundTransparency = 1,
 			Parent = side,
 		})
-		Utility.Padding(identity, 26, 26, 28, 24)
-		Utility.List(identity, 10, Enum.FillDirection.Vertical, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center)
+		Utility.Padding(identity, 20, 20, 28, 24)
+		Utility.List(identity, 8, Enum.FillDirection.Vertical, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center)
 
 		local brand = Create("Frame", {
 			Size = UDim2.fromOffset(64, 64),
@@ -301,8 +308,8 @@ return function(library, opts)
 			BackgroundTransparency = 1,
 			Parent = card,
 		})
-		Utility.Padding(form, 24, 24, 34, 34)
-		Utility.List(form, 12, Enum.FillDirection.Vertical, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center)
+		Utility.Padding(form, 20, 20, 34, 34)
+		Utility.List(form, 10, Enum.FillDirection.Vertical, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center)
 
 		local heading = Create("TextLabel", {
 			Size = UDim2.new(1, 0, 0, 26),
@@ -406,7 +413,7 @@ return function(library, opts)
 		Base.Gradient(theme, submitButton, 0)
 		submitLabel = Create("TextLabel", {
 			Size = UDim2.fromScale(1, 1),
-			Text = "Verify Key",
+			Text = submitText,
 			Font = Enum.Font.GothamBold,
 			TextSize = 16,
 			TextXAlignment = Enum.TextXAlignment.Center,
@@ -517,6 +524,10 @@ return function(library, opts)
 		maid:Give(closeButton.MouseButton1Click:Connect(function()
 			KeyUI:Close()
 		end))
+
+		KeyUI.Shell = shell
+		KeyUI.SubmitButton = submitButton
+		KeyUI.SubmitLabel = submitLabel
 
 		shell:Show()
 		if not Compat.IsMobile then

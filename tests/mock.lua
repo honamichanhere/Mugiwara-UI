@@ -293,7 +293,7 @@ local PARENT_CLASSES = {
 	ModuleScript = { "LuaSourceContainer" },
 }
 local DEFAULTS = {
-	AbsoluteSize = function() return Vector2.new(1280, 720) end,
+	AbsoluteSize = function() return MOCK_VIEWPORT or Vector2.new(1280, 720) end,
 	AbsolutePosition = function() return Vector2.new(0, 0) end,
 	AbsoluteContentSize = function() return Vector2.new(100, 100) end,
 	Size = function() return UDim2.new(0, 0, 0, 0) end,
@@ -466,14 +466,38 @@ instanceMT.__index = function(self, key)
 	return default
 end
 
+-- structural equality for the mock data types (UDim2, Vector2, Color3...)
+local function sameValue(a, b)
+	if rawequal(a, b) then
+		return true
+	end
+	if type(a) ~= "table" or type(b) ~= "table" or typeof(a) ~= typeof(b) then
+		return false
+	end
+	for key, value in pairs(a) do
+		if not sameValue(value, rawget(b, key)) then
+			return false
+		end
+	end
+	for key in pairs(b) do
+		if rawget(a, key) == nil then
+			return false
+		end
+	end
+	return true
+end
+
 instanceMT.__newindex = function(self, key, value)
 	if key == "Parent" then
 		setParent(self, value)
 		return
 	end
-	rawget(self, "_props")[key] = value
+	local props = rawget(self, "_props")
+	local old = props[key]
+	props[key] = value
+	-- like Roblox, property signals only fire when the value actually changed
 	local signal = rawget(self, "_propSignals")[key]
-	if signal then
+	if signal and not sameValue(old, value) then
 		signal:Fire()
 	end
 end

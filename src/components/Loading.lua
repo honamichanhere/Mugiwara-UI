@@ -107,6 +107,7 @@ return function(library, opts)
 		IgnoreGuiInset = true,
 		MinScale = 0.55,
 		MaxScale = 1.3,
+		MobileScale = opts.MobileScale,
 	})
 	local maid = shell.Maid
 	local card = shell.Card
@@ -524,7 +525,7 @@ return function(library, opts)
 	end))
 
 	--// API -------------------------------------------------------------------------------
-	local Loader = { Gui = shell.Gui, Destroyed = false }
+	local Loader = { Gui = shell.Gui, Shell = shell, Destroyed = false }
 
 	-- Loader.FinishEvent:Fire(message) finishes the loader; Loader.Finished fires once the UI is gone
 	Loader.FinishEvent = Utility.Signal.new()

@@ -41,6 +41,8 @@ local KeyUI = UI:KeySystem({
 	end,
 })
 check(KeyUI.Box ~= nil and KeyUI.Status ~= nil, "key UI builds its widgets")
+check(KeyUI.SubmitLabel.Text == "Verify Key", "the submit button has a default text")
+check(KeyUI.Shell.DesignSize.Y <= 262, "the Key UI card is short")
 
 local result, resolved = "unset", false
 task.spawn(function()
@@ -118,6 +120,39 @@ end)
 closable:Close()
 drain(4)
 check(closed and closeDone and closeResult == nil, "closing the key UI resumes Wait with nil")
+
+-- the button texts are yours, the card follows its content, and phones get a smaller card
+local custom = UI:KeySystem({
+	Folder = "FlowCustom", SubmitText = "Send", CheckingText = "Wait...", SuccessText = "Welcome",
+	Validate = function(key) task.wait() return key == "ok" end,
+})
+check(custom.SubmitLabel.Text == "Send", "SubmitText sets the button text")
+check(custom.Shell.DesignSize.Y == 224, "a Key UI without links is the short card")
+custom.Box.Text = "nope"
+custom:Submit()
+check(custom.SubmitLabel.Text == "Wait...", "CheckingText shows while validating")
+drain(2)
+check(custom.SubmitLabel.Text == "Send", "the button text comes back after a rejected key")
+custom.Box.Text = "ok"
+custom:Submit()
+drain(2)
+check(custom.SubmitLabel.Text == "Welcome", "SuccessText shows when the key is accepted")
+drain(8)
+check(UI:KeySystem({ Folder = "FlowTall", Height = 180, Validate = function() return false end }).Shell.DesignSize.Y == 180, "Height overrides the card height")
+check(KeyUI.Shell.DesignSize.Y == 262, "links make the card a little taller")
+
+UI.Compat.IsMobile = true
+MOCK_VIEWPORT = Vector2.new(914, 411)
+local phoneKey = UI:KeySystem({ Folder = "FlowPhone", Validate = function() return false end })
+check(phoneKey.Shell.UIScale.Scale == 0.75, "the Key UI is smaller on phones, got " .. tostring(phoneKey.Shell.UIScale.Scale))
+local fullKey = UI:KeySystem({ Folder = "FlowPhoneFull", MobileScale = 1, Validate = function() return false end })
+check(fullKey.Shell.UIScale.Scale == 1, "MobileScale = 1 keeps it full size")
+local phoneLoader = UI:Loading({ Title = "Hub" })
+check(phoneLoader.Shell and phoneLoader.Shell.UIScale.Scale <= 0.75 * 1.3 + 1e-9, "the Loading UI shrinks too")
+MOCK_VIEWPORT = nil
+UI.Compat.IsMobile = false
+fullKey:Close()
+drain(4)
 
 --// Loading UI ----------------------------------------------------------------------------
 local Loader = UI:Loading({ Title = "Hub", Owner = "Me", Version = "v1" })

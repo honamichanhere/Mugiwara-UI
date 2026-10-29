@@ -34,6 +34,13 @@ local function getHolder(library)
 		Parent = gui,
 	})
 	Utility.List(holder, 8, Enum.FillDirection.Vertical, Enum.HorizontalAlignment.Right, Enum.VerticalAlignment.Bottom)
+	-- smaller toasts on phones (the holder is anchored bottom-right, so it shrinks toward that corner)
+	local scale = Create("UIScale", { Parent = holder })
+	local function fit()
+		scale.Scale = Compat.AutoScale(gui.AbsoluteSize)
+	end
+	fit()
+	gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fit)
 
 	library._notifyGui = gui
 	library._notifyHolder = holder

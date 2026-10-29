@@ -5,6 +5,8 @@ Versions follow `package.json`. Every release is a git tag (`v0.6.1`, ...); `dis
 ## 0.10.0
 - **Viewport** element: a 3D preview card. Sources: a model (copied, never touched), your character (follows respawns), an asset id, a Roblox user id or a mesh spec. Drag to turn, optional auto-rotate, Yaw / Pitch / Zoom / FieldOfView / lighting / background options, and `SetModel`, `SetAsset`, `SetCharacter`, `SetMesh`... to change it later.
 - **GridDropdown items can use a Viewport instead of an Image** (or both: the picture shows until the model has loaded). Cells turn their model while hovered; `Viewport = { ... }` on the dropdown sets the look.
+- **Phones get a smaller UI**: the Window, Key UI, Loading UI, notifications and open button multiply a `MobileScale` (default 0.75, the value that fit a 1080p phone) into their fit. Tablets and desktops are unchanged; `SetScale` still works on top.
+- **Key UI**: a shorter card (the height follows the content), tighter spacing, and the button text is yours: `SubmitText`, `CheckingText`, `SuccessText`.
 - New shared module `core/ViewportView`; the test mock gained CFrame math, `Clone`, `GetBoundingBox` and a class hierarchy.
 
 ## 0.9.0

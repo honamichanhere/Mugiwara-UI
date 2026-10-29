@@ -15,7 +15,7 @@ local Shell = {}
 Shell.__index = Shell
 
 -- opts: Name, Size (Vector2), Backdrop (transparency to dim to, nil = none), InstantBackdrop,
---       IgnoreGuiInset, MinScale, MaxScale, Glow (default true)
+--       IgnoreGuiInset, MinScale, MaxScale, Glow (default true), MobileScale (see Compat.AutoScale)
 function Shell.new(library, opts)
 	local theme = library.Theme
 	local self = setmetatable({}, Shell)
@@ -26,6 +26,7 @@ function Shell.new(library, opts)
 	self.MinScale = opts.MinScale or 0.4
 	self.MaxScale = opts.MaxScale or 1
 	self.BackdropTarget = opts.Backdrop
+	self.MobileScale = opts.MobileScale
 	self.Neon = {}
 	local maid = self.Maid
 
@@ -109,7 +110,7 @@ function Shell:_fit()
 		area = camera and camera.ViewportSize or Vector2.new(1280, 720)
 	end
 	local fit = math.min((area.X - 32) / self.DesignSize.X, (area.Y - 32) / self.DesignSize.Y)
-	self.UIScale.Scale = Utility.Clamp(fit, self.MinScale, self.MaxScale)
+	self.UIScale.Scale = Utility.Clamp(fit, self.MinScale, self.MaxScale) * Compat.AutoScale(area, self.MobileScale)
 end
 
 function Shell:Show()

@@ -1225,8 +1225,9 @@ local Shell = Import("components/Shell")
 
 local Create, Tween = Utility.Create, Utility.Tween
 
--- 21:9
-local WIDTH, HEIGHT = 700, 300
+-- wide card; the height follows the content (a row of link buttons makes it taller)
+local WIDTH = 700
+local HEIGHT_PLAIN, HEIGHT_WITH_LINKS = 224, 262
 local SIDE = 250
 
 local function trim(text)
@@ -1237,6 +1238,8 @@ end
 
 -- opts: Title, Subtitle, Icon, Note (false hides it), Heading, Placeholder, Folder,
 --       SaveKey (default true; false = never save the key), Links = { { Title, Link, Icon, Callback } },
+--       SubmitText ("Verify Key"), CheckingText ("Checking..."), SuccessText ("Access granted"): the button texts,
+--       Height (card height in pixels, default follows the content), MobileScale (default 0.75 on phones),
 --       Validate(key) -> true | false, message  (required, may yield; only `true` accepts),
 --       OnSuccess(key), OnClose()
 return function(library, opts)
@@ -1250,6 +1253,9 @@ return function(library, opts)
 	local keyPath = folder .. "/key.txt"
 	local canSave = opts.SaveKey ~= false and Compat.FilesSupported
 	local links = opts.Links or {}
+	local submitText = opts.SubmitText or "Verify Key"
+	local checkingText = opts.CheckingText or "Checking..."
+	local successText = opts.SuccessText or "Access granted"
 
 	local KeyUI = {
 		Completed = Utility.Signal.new(true),
@@ -1353,7 +1359,7 @@ return function(library, opts)
 		busy = true
 		setStatus("Checking key...", "busy")
 		if submitLabel then
-			submitLabel.Text = "Checking..."
+			submitLabel.Text = checkingText
 		end
 
 		task.spawn(function()
@@ -1362,7 +1368,7 @@ return function(library, opts)
 				busy = false -- an accepted key keeps the card locked while it plays the success animation
 				setStatus(message or "Invalid key.", "error")
 				if submitLabel then
-					submitLabel.Text = "Verify Key"
+					submitLabel.Text = submitText
 				end
 				shake()
 				return
@@ -1370,7 +1376,7 @@ return function(library, opts)
 
 			setStatus(message or "Key accepted.", "success")
 			if submitLabel then
-				submitLabel.Text = "Access granted"
+				submitLabel.Text = successText
 			end
 			if submitButton then
 				submitButton.BackgroundColor3 = theme.Tokens.Success
@@ -1393,7 +1399,8 @@ return function(library, opts)
 	local function build()
 		shell = Shell.new(library, {
 			Name = "Key",
-			Size = Vector2.new(WIDTH, HEIGHT),
+			Size = Vector2.new(WIDTH, opts.Height or (#links > 0 and HEIGHT_WITH_LINKS or HEIGHT_PLAIN)),
+			MobileScale = opts.MobileScale,
 			Backdrop = 0.45,
 			-- covers the whole screen including the top bar strip (the backdrop used to stop below it)
 			IgnoreGuiInset = true,
@@ -1424,8 +1431,8 @@ return function(library, opts)
 			BackgroundTransparency = 1,
 			Parent = side,
 		})
-		Utility.Padding(identity, 26, 26, 28, 24)
-		Utility.List(identity, 10, Enum.FillDirection.Vertical, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center)
+		Utility.Padding(identity, 20, 20, 28, 24)
+		Utility.List(identity, 8, Enum.FillDirection.Vertical, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center)
 
 		local brand = Create("Frame", {
 			Size = UDim2.fromOffset(64, 64),
@@ -1507,8 +1514,8 @@ return function(library, opts)
 			BackgroundTransparency = 1,
 			Parent = card,
 		})
-		Utility.Padding(form, 24, 24, 34, 34)
-		Utility.List(form, 12, Enum.FillDirection.Vertical, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center)
+		Utility.Padding(form, 20, 20, 34, 34)
+		Utility.List(form, 10, Enum.FillDirection.Vertical, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center)
 
 		local heading = Create("TextLabel", {
 			Size = UDim2.new(1, 0, 0, 26),
@@ -1612,7 +1619,7 @@ return function(library, opts)
 		Base.Gradient(theme, submitButton, 0)
 		submitLabel = Create("TextLabel", {
 			Size = UDim2.fromScale(1, 1),
-			Text = "Verify Key",
+			Text = submitText,
 			Font = Enum.Font.GothamBold,
 			TextSize = 16,
 			TextXAlignment = Enum.TextXAlignment.Center,
@@ -1723,6 +1730,10 @@ return function(library, opts)
 		maid:Give(closeButton.MouseButton1Click:Connect(function()
 			KeyUI:Close()
 		end))
+
+		KeyUI.Shell = shell
+		KeyUI.SubmitButton = submitButton
+		KeyUI.SubmitLabel = submitLabel
 
 		shell:Show()
 		if not Compat.IsMobile then
@@ -1868,6 +1879,7 @@ return function(library, opts)
 		IgnoreGuiInset = true,
 		MinScale = 0.55,
 		MaxScale = 1.3,
+		MobileScale = opts.MobileScale,
 	})
 	local maid = shell.Maid
 	local card = shell.Card
@@ -2285,7 +2297,7 @@ return function(library, opts)
 	end))
 
 	--// API -------------------------------------------------------------------------------
-	local Loader = { Gui = shell.Gui, Destroyed = false }
+	local Loader = { Gui = shell.Gui, Shell = shell, Destroyed = false }
 
 	-- Loader.FinishEvent:Fire(message) finishes the loader; Loader.Finished fires once the UI is gone
 	Loader.FinishEvent = Utility.Signal.new()
@@ -2568,6 +2580,13 @@ local function getHolder(library)
 		Parent = gui,
 	})
 	Utility.List(holder, 8, Enum.FillDirection.Vertical, Enum.HorizontalAlignment.Right, Enum.VerticalAlignment.Bottom)
+	-- smaller toasts on phones (the holder is anchored bottom-right, so it shrinks toward that corner)
+	local scale = Create("UIScale", { Parent = holder })
+	local function fit()
+		scale.Scale = Compat.AutoScale(gui.AbsoluteSize)
+	end
+	fit()
+	gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fit)
 
 	library._notifyGui = gui
 	library._notifyHolder = holder
@@ -2844,7 +2863,7 @@ local Shell = {}
 Shell.__index = Shell
 
 -- opts: Name, Size (Vector2), Backdrop (transparency to dim to, nil = none), InstantBackdrop,
---       IgnoreGuiInset, MinScale, MaxScale, Glow (default true)
+--       IgnoreGuiInset, MinScale, MaxScale, Glow (default true), MobileScale (see Compat.AutoScale)
 function Shell.new(library, opts)
 	local theme = library.Theme
 	local self = setmetatable({}, Shell)
@@ -2855,6 +2874,7 @@ function Shell.new(library, opts)
 	self.MinScale = opts.MinScale or 0.4
 	self.MaxScale = opts.MaxScale or 1
 	self.BackdropTarget = opts.Backdrop
+	self.MobileScale = opts.MobileScale
 	self.Neon = {}
 	local maid = self.Maid
 
@@ -2938,7 +2958,7 @@ function Shell:_fit()
 		area = camera and camera.ViewportSize or Vector2.new(1280, 720)
 	end
 	local fit = math.min((area.X - 32) / self.DesignSize.X, (area.Y - 32) / self.DesignSize.Y)
-	self.UIScale.Scale = Utility.Clamp(fit, self.MinScale, self.MaxScale)
+	self.UIScale.Scale = Utility.Clamp(fit, self.MinScale, self.MaxScale) * Compat.AutoScale(area, self.MobileScale)
 end
 
 function Shell:Show()
@@ -3356,7 +3376,8 @@ local function toVector(size, fallback)
 end
 
 -- opts: Title, Subtitle, Version, Icon, Size, MinSize, MaxSize, Resizable, Folder, ToggleKey, Blur,
---       Neon, OpenButton, ConfirmClose, ShowUser, SideBarWidth, ThemeSwitcher, Background, Theme
+--       Neon, OpenButton, ConfirmClose, ShowUser, SideBarWidth, ThemeSwitcher, Background, Theme,
+--       MobileScale (default 0.75 on phones, see Compat.AutoScale; 1 keeps full size)
 function Window.new(library, opts)
 	opts = opts or {}
 	local theme = library.Theme
@@ -3376,6 +3397,7 @@ function Window.new(library, opts)
 	self.Opened = false
 	self.Maximized = false
 	self.UserScale = 1
+	self.MobileScale = opts.MobileScale
 	self._tabOrder = 0
 	self.OnDestroy = opts.OnDestroy
 
@@ -3834,6 +3856,7 @@ function Window.new(library, opts)
 			Parent = gui,
 		})
 		Utility.Corner(button, Utility.Pill)
+		self.OpenScale = Create("UIScale", { Parent = button })
 		theme:Bind(button, { BackgroundColor3 = "Popup", BackgroundTransparency = "PopupAlpha" })
 		local ring = Utility.Stroke(button, WHITE, 0.15, 2)
 		Utility.Spin(maid, Base.Gradient(theme, ring, 0, "CycleSeq"), 6)
@@ -3926,24 +3949,33 @@ function Window:_area()
 	return area
 end
 
+-- The scale the user (SetScale) and the device (phones are smaller, Compat.AutoScale) ask for.
+function Window:_baseScale()
+	return self.UserScale * Compat.AutoScale(self:_area(), self.MobileScale)
+end
+
 -- Shrinks the window on small screens (phones) so it never overflows the viewport.
 function Window:_fitScale(size)
 	local area = self:_area()
 	local fit = math.min(1, (area.X - MARGIN) / size.X, (area.Y - MARGIN) / size.Y)
-	return math.max(fit, 0.4) * self.UserScale
+	return math.max(fit, 0.4) * self:_baseScale()
 end
 
 function Window:_maximizedSize()
 	local area = self:_area()
-	return UDim2.fromOffset((area.X - MARGIN) / self.UserScale, (area.Y - MARGIN) / self.UserScale)
+	local base = self:_baseScale()
+	return UDim2.fromOffset((area.X - MARGIN) / base, (area.Y - MARGIN) / base)
 end
 
 function Window:_fit()
 	if self._morphing then
 		return
 	end
+	if self.OpenScale then
+		self.OpenScale.Scale = Compat.AutoScale(self:_area(), self.MobileScale)
+	end
 	if self.Maximized then
-		self.UIScale.Scale = self.UserScale
+		self.UIScale.Scale = self:_baseScale()
 		self.Main.Size = self:_maximizedSize()
 		return
 	end
@@ -3974,7 +4006,7 @@ function Window:SetMaximized(state)
 		self._restore = { Size = main.Size, Position = main.Position }
 		self.Maximized = true
 		Tween(main, { Size = self:_maximizedSize(), Position = UDim2.fromScale(0.5, 0.5) }, MORPH_TIME)
-		Tween(self.UIScale, { Scale = self.UserScale }, MORPH_TIME)
+		Tween(self.UIScale, { Scale = self:_baseScale() }, MORPH_TIME)
 	else
 		self.Maximized = false
 		local restore = self._restore or { Size = UDim2.fromOffset(640, 430), Position = UDim2.fromScale(0.5, 0.5) }
@@ -8199,6 +8231,26 @@ Compat.Env = (getgenv and try(getgenv)) or _G
 Compat.Executor = (identifyexecutor and try(identifyexecutor)) or "Unknown"
 
 Compat.IsMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+
+-- Phones get a smaller UI: 0.75 is what looked right on a 1080p phone (a desktop at 100% is right on the same
+-- resolution because a phone screen is physically small). Tablets (short side 600+ after Roblox DPI scaling)
+-- and desktops keep 1. The Window, Key UI, Loading UI and notifications multiply this into their fit.
+-- Compat.MobileScale changes the default; the Window, Key UI and Loading UI also take a MobileScale option.
+Compat.MobileScale = 0.75
+
+-- area: the ScreenGui size (Vector2); override: a MobileScale option (applies on any touch-only device)
+function Compat.AutoScale(area, override)
+	if not Compat.IsMobile then
+		return 1
+	end
+	if override then
+		return override
+	end
+	if area and area.X > 0 and area.Y > 0 and math.min(area.X, area.Y) >= 600 then
+		return 1
+	end
+	return Compat.MobileScale
+end
 
 local function service(name)
 	local raw = game:GetService(name)

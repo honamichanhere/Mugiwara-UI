@@ -39,7 +39,8 @@ local function toVector(size, fallback)
 end
 
 -- opts: Title, Subtitle, Version, Icon, Size, MinSize, MaxSize, Resizable, Folder, ToggleKey, Blur,
---       Neon, OpenButton, ConfirmClose, ShowUser, SideBarWidth, ThemeSwitcher, Background, Theme
+--       Neon, OpenButton, ConfirmClose, ShowUser, SideBarWidth, ThemeSwitcher, Background, Theme,
+--       MobileScale (default 0.75 on phones, see Compat.AutoScale; 1 keeps full size)
 function Window.new(library, opts)
 	opts = opts or {}
 	local theme = library.Theme
@@ -59,6 +60,7 @@ function Window.new(library, opts)
 	self.Opened = false
 	self.Maximized = false
 	self.UserScale = 1
+	self.MobileScale = opts.MobileScale
 	self._tabOrder = 0
 	self.OnDestroy = opts.OnDestroy
 
@@ -517,6 +519,7 @@ function Window.new(library, opts)
 			Parent = gui,
 		})
 		Utility.Corner(button, Utility.Pill)
+		self.OpenScale = Create("UIScale", { Parent = button })
 		theme:Bind(button, { BackgroundColor3 = "Popup", BackgroundTransparency = "PopupAlpha" })
 		local ring = Utility.Stroke(button, WHITE, 0.15, 2)
 		Utility.Spin(maid, Base.Gradient(theme, ring, 0, "CycleSeq"), 6)
@@ -609,24 +612,33 @@ function Window:_area()
 	return area
 end
 
+-- The scale the user (SetScale) and the device (phones are smaller, Compat.AutoScale) ask for.
+function Window:_baseScale()
+	return self.UserScale * Compat.AutoScale(self:_area(), self.MobileScale)
+end
+
 -- Shrinks the window on small screens (phones) so it never overflows the viewport.
 function Window:_fitScale(size)
 	local area = self:_area()
 	local fit = math.min(1, (area.X - MARGIN) / size.X, (area.Y - MARGIN) / size.Y)
-	return math.max(fit, 0.4) * self.UserScale
+	return math.max(fit, 0.4) * self:_baseScale()
 end
 
 function Window:_maximizedSize()
 	local area = self:_area()
-	return UDim2.fromOffset((area.X - MARGIN) / self.UserScale, (area.Y - MARGIN) / self.UserScale)
+	local base = self:_baseScale()
+	return UDim2.fromOffset((area.X - MARGIN) / base, (area.Y - MARGIN) / base)
 end
 
 function Window:_fit()
 	if self._morphing then
 		return
 	end
+	if self.OpenScale then
+		self.OpenScale.Scale = Compat.AutoScale(self:_area(), self.MobileScale)
+	end
 	if self.Maximized then
-		self.UIScale.Scale = self.UserScale
+		self.UIScale.Scale = self:_baseScale()
 		self.Main.Size = self:_maximizedSize()
 		return
 	end
@@ -657,7 +669,7 @@ function Window:SetMaximized(state)
 		self._restore = { Size = main.Size, Position = main.Position }
 		self.Maximized = true
 		Tween(main, { Size = self:_maximizedSize(), Position = UDim2.fromScale(0.5, 0.5) }, MORPH_TIME)
-		Tween(self.UIScale, { Scale = self.UserScale }, MORPH_TIME)
+		Tween(self.UIScale, { Scale = self:_baseScale() }, MORPH_TIME)
 	else
 		self.Maximized = false
 		local restore = self._restore or { Size = UDim2.fromOffset(640, 430), Position = UDim2.fromScale(0.5, 0.5) }

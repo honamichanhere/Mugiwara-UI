@@ -80,7 +80,7 @@ local Window = MugiwaraUI:CreateWindow({ Title = "Mugiwara Hub" })
 
 Run [`examples/dummy-flow.lua`](examples/dummy-flow.lua) to see it (any key is accepted there).
 
-**Key UI options:** `Title`, `Subtitle`, `Icon`, `Note` (`false` hides it), `Placeholder`, `Folder`, `Validate(key)` (**required**, must return `true` to accept), `Links` (`{ Title, Link, Icon, Callback }`; a `Link` is copied to the clipboard because executors cannot open a browser), `Heading`, `SaveKey` (default `true`: an accepted key is always saved for the next run; `false` never saves), `OnSuccess(key)`, `OnClose()`. The card is wide (21:9): identity on the left, the form on the right.
+**Key UI options:** `Title`, `Subtitle`, `Icon`, `Note` (`false` hides it), `Placeholder`, `Folder`, `Validate(key)` (**required**, must return `true` to accept), `Links` (`{ Title, Link, Icon, Callback }`; a `Link` is copied to the clipboard because executors cannot open a browser), `Heading`, `SaveKey` (default `true`: an accepted key is always saved for the next run; `false` never saves), `SubmitText` (the button, default `"Verify Key"`), `CheckingText`, `SuccessText`, `Height` (pixels; by default the card is as short as its content), `MobileScale`, `OnSuccess(key)`, `OnClose()`. The card is wide: identity on the left, the form on the right. Pressing Enter in the box submits too, but the button is always there for people who do not know that.
 Methods: `Wait()`, `Submit(key)`, `Close()`, `ClearSavedKey()`, `SetStatus(text, kind)`; `KeyUI.Completed` is a signal. When a saved key still validates, the Key UI is skipped entirely and `Wait()` returns immediately; an outdated saved key is deleted and the card shows up.
 
 **Loading UI options:** `Title`, `Owner`, `Version`, `Terminal` (terminal window title), `Prompt`, `Logs` (list of fake log lines), `MaxLogLines`, `InstantCover`.
@@ -130,6 +130,7 @@ Methods: `SetStatus(text)`, `SetProgress(target, cap)`, `Log(text, "info"|"ok"|"
 | `Size` | `640x430` | `UDim2.fromOffset(w, h)` |
 | `MinSize`, `MaxSize` | `480x340`, `1000x760` | Resize limits |
 | `Theme` | `"Gear 5"` | Starting theme name |
+| `MobileScale` | `0.75` on phones | Extra shrink on touch-only devices; the Key UI, Loading UI and notifications follow it too. `1` keeps full size. Tablets and desktops are never shrunk (`MugiwaraUI.Compat.MobileScale` changes the default) |
 | `OnDestroy` | none | Function called when the window is destroyed |
 | `Resizable` | `true` | Bottom-right grip |
 | `Folder` | `"MugiwaraUI"` | Workspace folder for configs |

@@ -22,6 +22,26 @@ Compat.Executor = (identifyexecutor and try(identifyexecutor)) or "Unknown"
 
 Compat.IsMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 
+-- Phones get a smaller UI: 0.75 is what looked right on a 1080p phone (a desktop at 100% is right on the same
+-- resolution because a phone screen is physically small). Tablets (short side 600+ after Roblox DPI scaling)
+-- and desktops keep 1. The Window, Key UI, Loading UI and notifications multiply this into their fit.
+-- Compat.MobileScale changes the default; the Window, Key UI and Loading UI also take a MobileScale option.
+Compat.MobileScale = 0.75
+
+-- area: the ScreenGui size (Vector2); override: a MobileScale option (applies on any touch-only device)
+function Compat.AutoScale(area, override)
+	if not Compat.IsMobile then
+		return 1
+	end
+	if override then
+		return override
+	end
+	if area and area.X > 0 and area.Y > 0 and math.min(area.X, area.Y) >= 600 then
+		return 1
+	end
+	return Compat.MobileScale
+end
+
 local function service(name)
 	local raw = game:GetService(name)
 	if cloneref then

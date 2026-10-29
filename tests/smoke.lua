@@ -521,6 +521,46 @@ heroCells[4].Frame.MouseButton1Click:Fire()
 check(heroes.Right:FindFirstChild("Viewport", true) == nil and heroes:Get() == "Photo", "choosing a picture item swaps it")
 check(heroes.Cells()[1].View ~= heroCells[1].View, "rebuilding replaces the viewports")
 
+--// phones get a smaller UI (Compat.AutoScale): 0.75 on top of the fit
+local function scaleOf(window)
+	return window.UIScale.Scale
+end
+local desktop = UI:CreateWindow({ Title = "Desktop", Folder = "ScaleDesktop", Size = UDim2.fromOffset(660, 440) })
+check(scaleOf(desktop) == 1, "desktop keeps full size")
+UI.Compat.IsMobile = true
+MOCK_VIEWPORT = Vector2.new(914, 411)
+local phone = UI:CreateWindow({ Title = "Phone", Folder = "ScalePhone", Size = UDim2.fromOffset(660, 440) })
+local fitPhone = math.min(1, (914 - 24) / 660, (411 - 24) / 440)
+check(math.abs(scaleOf(phone) - fitPhone * 0.75) < 1e-9, "a phone gets the fit times 0.75, got " .. tostring(scaleOf(phone)))
+check(phone.OpenScale and phone.OpenScale.Scale == 0.75, "the open button shrinks too")
+phone:SetScale(0.8)
+check(math.abs(scaleOf(phone) - fitPhone * 0.75 * 0.8) < 1e-9, "SetScale still multiplies on top")
+phone:SetScale(1)
+phone:SetMaximized(true)
+task.flush()
+local maxSize = phone.Main.Size
+check(math.abs(maxSize.X.Offset - (914 - 24) / 0.75) < 1e-6 and math.abs(maxSize.Y.Offset - (411 - 24) / 0.75) < 1e-6, "maximized still fills the screen")
+check(math.abs(scaleOf(phone) - 0.75) < 1e-9, "at 0.75 while maximized")
+phone:SetMaximized(false)
+task.flush()
+local fullSize = UI:CreateWindow({ Title = "Full", Folder = "ScaleFull", Size = UDim2.fromOffset(660, 440), MobileScale = 1 })
+check(math.abs(scaleOf(fullSize) - fitPhone) < 1e-9, "MobileScale = 1 keeps the fit only")
+MOCK_VIEWPORT = Vector2.new(1280, 720)
+local tablet = UI:CreateWindow({ Title = "Tablet", Folder = "ScaleTablet", Size = UDim2.fromOffset(660, 440) })
+check(scaleOf(tablet) == 1, "tablet-sized screens keep full size")
+UI._notifyHolder = nil
+MOCK_VIEWPORT = Vector2.new(914, 411)
+UI:Notify({ Title = "phone toast", Duration = 0 })
+check(UI._notifyHolder:FindFirstChildOfClass("UIScale").Scale == 0.75, "notifications shrink on phones")
+UI._notifyHolder = nil
+MOCK_VIEWPORT = nil
+UI.Compat.IsMobile = false
+UI:Notify({ Title = "desktop toast", Duration = 0 })
+check(UI._notifyHolder:FindFirstChildOfClass("UIScale").Scale == 1, "and not on desktop")
+for _, extra in ipairs({ desktop, phone, fullSize, tablet }) do
+	extra:Destroy()
+end
+
 --// tab sections
 local group = Window:TabSection({ Title = "Group" })
 local groupTab = group:Tab({ Title = "InGroup" })

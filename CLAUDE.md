@@ -98,6 +98,8 @@ Kill switch: `npm run chat:off|readonly|on` in `server/worker`. The public URL i
 - Each theme ships its own default wallpaper (ids chosen by the owner, in `src/core/Theme.lua`), transparency 0.3. Icon
   colors default to the theme accent and are overridable with `IconColor`; the built-in controls are lucide icons with
   drawn fallbacks.
+- Phones (touch, no keyboard, short screen side under 600) get the UI at `Compat.MobileScale` = 0.75 on top of the fit; the
+  owner measured that on a 1080p phone while a desktop at 100% is right. Everything uses `Compat.AutoScale`.
 - Sections nest at most 2 levels. WindUI parity is not a goal beyond common hubs.
 
 ## Status
